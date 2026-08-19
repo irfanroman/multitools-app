@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { DashboardProvider } from '@/lib/DashboardContext';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { AuthGuard } from '@/components/layout/AuthGuard';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -24,17 +25,19 @@ export default function RootLayout({
   return (
     <html lang="id" className={`h-full ${plusJakartaSans.variable}`}>
       <body className="min-h-full flex flex-row bg-[#EDEFEB] text-[#111111] font-sans antialiased selection:bg-[#E4FF6B] selection:text-[#111111] tabular-nums">
-        <DashboardProvider>
-          {/* Dark Icon-only Sidebar */}
-          <Sidebar />
+        <AuthGuard>
+          <DashboardProvider>
+            {/* Dark Icon-only Sidebar */}
+            <Sidebar />
 
-          {/* Main App Canvas */}
-          <main className="flex-1 min-w-0 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 flex flex-col">
-            <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col">
-              {children}
-            </div>
-          </main>
-        </DashboardProvider>
+            {/* Main App Canvas */}
+            <main className="flex-1 min-w-0 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 flex flex-col">
+              <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col">
+                {children}
+              </div>
+            </main>
+          </DashboardProvider>
+        </AuthGuard>
       </body>
     </html>
   );
