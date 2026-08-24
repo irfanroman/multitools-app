@@ -1,6 +1,14 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
 import { supabase } from './supabaseClient';
 import {
   Wallet,
@@ -33,12 +41,38 @@ import {
   INITIAL_JOURNAL_ENTRIES,
 } from './mockData';
 
-interface DashboardContextType {
-  // Finance
+/* ------------------------------------------------------------------ *
+ * Context shape
+ *
+ * Split into two contexts on purpose:
+ *   - DashboardDataContext  changes whenever any row changes
+ *   - DashboardActionsContext  never changes after mount
+ *
+ * A component that only dispatches (modals, forms, buttons) subscribes to
+ * the actions context and is therefore immune to data re-renders. With a
+ * single merged context every consumer re-rendered on every keystroke that
+ * touched any slice of state.
+ * ------------------------------------------------------------------ */
+
+interface DashboardData {
   wallets: Wallet[];
   categories: CategoryItem[];
   transactions: Transaction[];
   budgets: Budget[];
+  streaks: Streak[];
+  notes: Note[];
+  flashcards: Flashcard[];
+  assignments: Assignment[];
+  studySessions: StudySession[];
+  datasets: Dataset[];
+  experiments: MLExperiment[];
+  snippets: CodeSnippet[];
+  journalEntries: JournalEntry[];
+  isLoading: boolean;
+  isOnline: boolean;
+}
+
+interface DashboardActions {
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<void>;
   updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -48,16 +82,7 @@ interface DashboardContextType {
   updateBudget: (category: string, limit_amount: number) => Promise<void>;
   addCategory: (c: Omit<CategoryItem, 'id'>) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
-  
-  // Streaks
-  streaks: Streak[];
   triggerStreak: (module: 'finance' | 'study' | 'journal' | 'overall') => void;
-
-  // Study
-  notes: Note[];
-  flashcards: Flashcard[];
-  assignments: Assignment[];
-  studySessions: StudySession[];
   addNote: (note: Omit<Note, 'id' | 'created_at'>) => Promise<Note>;
   updateNote: (id: string, updates: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
@@ -69,71 +94,77 @@ interface DashboardContextType {
   toggleAssignment: (id: string) => Promise<void>;
   deleteAssignment: (id: string) => Promise<void>;
   logStudySession: (session: Omit<StudySession, 'id'>) => Promise<void>;
-
-  // Data Science
-  datasets: Dataset[];
-  experiments: MLExperiment[];
-  snippets: CodeSnippet[];
   addDataset: (d: Omit<Dataset, 'id' | 'uploaded_at'>) => Promise<void>;
   deleteDataset: (id: string) => Promise<void>;
   addExperiment: (e: Omit<MLExperiment, 'id' | 'created_at'>) => Promise<void>;
   deleteExperiment: (id: string) => Promise<void>;
   addSnippet: (s: Omit<CodeSnippet, 'id' | 'created_at'>) => Promise<void>;
   deleteSnippet: (id: string) => Promise<void>;
-
-  // Mood / Journal
-  journalEntries: JournalEntry[];
   addJournalEntry: (entry: Omit<JournalEntry, 'id' | 'created_at'>) => Promise<void>;
   deleteJournalEntry: (id: string) => Promise<void>;
-
-  // Global status
-  isLoading: boolean;
-  isOnline: boolean;
   refreshAll: () => Promise<void>;
 }
 
-const DashboardContext = createContext<DashboardContextType | null>(null);
+const DashboardDataContext = createContext<DashboardData | null>(null);
+const DashboardActionsContext = createContext<DashboardActions | null>(null);
+
+/* ------------------------------------------------------------------ *
+ * localStorage helpers
+ * ------------------------------------------------------------------ */
+
+const LS_CATEGORIES = 'dashboard_custom_categories';
+const LS_DELETED_TX = 'dashboard_deleted_tx_ids';
+
+function readJSON<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJSON(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota / private mode — in-memory state is still correct */
+  }
+}
+
+/** Case-insensitive union by `name`, first occurrence wins. O(n) via a Set. */
+function mergeCategoriesByName(...groups: CategoryItem[][]): CategoryItem[] {
+  const seen = new Set<string>();
+  const out: CategoryItem[] = [];
+  for (const group of groups) {
+    for (const c of group) {
+      const key = c.name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
 
-  // States with localStorage persistence
+  // Lazy initialisers run once. The old code did this work twice: once here
+  // and again in a mount effect that recomputed the identical value.
   const [wallets, setWallets] = useState<Wallet[]>(INITIAL_WALLETS);
-  const [categories, setCategories] = useState<CategoryItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedCats = localStorage.getItem('dashboard_custom_categories');
-        if (savedCats) {
-          const parsed = JSON.parse(savedCats);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const merged = [...INITIAL_CATEGORIES];
-            parsed.forEach((c: CategoryItem) => {
-              if (!merged.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
-                merged.push(c);
-              }
-            });
-            return merged;
-          }
-        }
-      } catch (e) {}
-    }
-    return INITIAL_CATEGORIES;
-  });
-
+  const [categories, setCategories] = useState<CategoryItem[]>(() =>
+    mergeCategoriesByName(INITIAL_CATEGORIES, readJSON<CategoryItem[]>(LS_CATEGORIES, []))
+  );
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
-        if (deletedTxRaw) {
-          const deletedIds = JSON.parse(deletedTxRaw);
-          if (Array.isArray(deletedIds) && deletedIds.length > 0) {
-            return INITIAL_TRANSACTIONS.filter((t) => !deletedIds.includes(t.id));
-          }
-        }
-      } catch (e) {}
-    }
-    return INITIAL_TRANSACTIONS;
+    const deleted = readJSON<string[]>(LS_DELETED_TX, []);
+    if (deleted.length === 0) return INITIAL_TRANSACTIONS;
+    const gone = new Set(deleted);
+    return INITIAL_TRANSACTIONS.filter((t) => !gone.has(t.id));
   });
 
   const [budgets, setBudgets] = useState<Budget[]>(INITIAL_BUDGETS);
@@ -147,128 +178,99 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [snippets, setSnippets] = useState<CodeSnippet[]>(INITIAL_SNIPPETS);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(INITIAL_JOURNAL_ENTRIES);
 
-  // Load custom categories & deleted tx tracking from localStorage
+  /* Mirrors of state for use inside callbacks, so the callbacks can stay
+     dependency-free (stable identity) without reading stale values.
+     Synced in an effect rather than during render: writing a ref while
+     rendering is unsafe under concurrent React, and every reader here runs
+     after commit (event handlers and async continuations). */
+  const walletsRef = useRef(wallets);
+  const transactionsRef = useRef(transactions);
+
   useEffect(() => {
-    try {
-      const savedCats = localStorage.getItem('dashboard_custom_categories');
-      if (savedCats) {
-        const parsed = JSON.parse(savedCats);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const merged = [...INITIAL_CATEGORIES];
-          parsed.forEach((c: CategoryItem) => {
-            if (!merged.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
-              merged.push(c);
-            }
-          });
-          setCategories(merged);
-        }
-      }
+    walletsRef.current = wallets;
+  }, [wallets]);
 
-      // Filter initial transactions if any were deleted locally
-      const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
-      if (deletedTxRaw) {
-        const deletedIds = JSON.parse(deletedTxRaw);
-        if (Array.isArray(deletedIds) && deletedIds.length > 0) {
-          setTransactions((prev) => prev.filter((t) => !deletedIds.includes(t.id)));
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load initial data from localStorage:', e);
-    }
-  }, []);
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
 
-  // Fetch all from Supabase
+  /* ---------------------------------------------------------------- *
+   * Fetch — all 13 tables in parallel.
+   *
+   * The previous implementation awaited each query in sequence, so the
+   * dashboard cost 13 sequential round-trips (~1.5-4s on mobile networks).
+   * Promise.allSettled issues them concurrently and tolerates missing
+   * tables individually instead of aborting the whole refresh.
+   * ---------------------------------------------------------------- */
   const refreshAll = useCallback(async () => {
     setIsLoading(true);
+
+    const deleted = new Set(readJSON<string[]>(LS_DELETED_TX, []));
+
+    const q = <T,>(build: () => PromiseLike<{ data: T[] | null }>) =>
+      Promise.resolve(build()).then(
+        (r) => r.data ?? null,
+        () => null
+      );
+
     try {
-      const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
-      const deletedIds: string[] = deletedTxRaw ? JSON.parse(deletedTxRaw) : [];
+      const [
+        wData, tData, bData, sData, nData, fcData, aData,
+        ssData, dData, expData, snData, jData, catData,
+      ] = await Promise.all([
+        q<Wallet>(() => supabase.from('wallets').select('*')),
+        q<Transaction>(() =>
+          supabase.from('transactions').select('*').order('created_at', { ascending: false })
+        ),
+        q<Budget>(() => supabase.from('budgets').select('*')),
+        q<Streak>(() => supabase.from('streaks').select('*')),
+        q<Note>(() => supabase.from('notes').select('*').order('created_at', { ascending: false })),
+        q<Flashcard>(() => supabase.from('flashcards').select('*')),
+        q<Assignment>(() =>
+          supabase.from('assignments').select('*').order('due_date', { ascending: true })
+        ),
+        q<StudySession>(() => supabase.from('study_sessions').select('*')),
+        q<Dataset>(() =>
+          supabase.from('datasets').select('*').order('uploaded_at', { ascending: false })
+        ),
+        q<MLExperiment>(() =>
+          supabase.from('ml_experiments').select('*').order('created_at', { ascending: false })
+        ),
+        q<CodeSnippet>(() =>
+          supabase.from('code_snippets').select('*').order('created_at', { ascending: false })
+        ),
+        q<JournalEntry>(() =>
+          supabase.from('journal_entries').select('*').order('date', { ascending: false })
+        ),
+        q<CategoryItem>(() => supabase.from('categories').select('*')),
+      ]);
 
-      // 1. Wallets
-      const { data: wData } = await supabase.from('wallets').select('*');
-      if (wData && wData.length > 0) setWallets(wData);
+      if (wData?.length) setWallets(wData);
+      if (bData?.length) setBudgets(bData);
+      if (sData?.length) setStreaks(sData);
+      if (nData?.length) setNotes(nData);
+      if (fcData?.length) setFlashcards(fcData);
+      if (aData?.length) setAssignments(aData);
+      if (ssData?.length) setStudySessions(ssData);
+      if (dData?.length) setDatasets(dData);
+      if (expData?.length) setExperiments(expData);
+      if (snData?.length) setSnippets(snData);
+      if (jData?.length) setJournalEntries(jData);
 
-      // 2. Transactions
-      const { data: tData, error: tErr } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!tErr && tData !== null) {
-        const filtered = tData.filter((t: Transaction) => !deletedIds.includes(t.id));
-        setTransactions(filtered);
-      } else {
-        setTransactions((prev) => prev.filter((t) => !deletedIds.includes(t.id)));
+      if (tData) {
+        setTransactions(deleted.size ? tData.filter((t) => !deleted.has(t.id)) : tData);
+      } else if (deleted.size) {
+        setTransactions((prev) => prev.filter((t) => !deleted.has(t.id)));
       }
 
-      // 3. Budgets
-      const { data: bData } = await supabase.from('budgets').select('*');
-      if (bData && bData.length > 0) setBudgets(bData);
+      setCategories(
+        mergeCategoriesByName(
+          INITIAL_CATEGORIES,
+          readJSON<CategoryItem[]>(LS_CATEGORIES, []),
+          catData ?? []
+        )
+      );
 
-      // 4. Streaks
-      const { data: sData } = await supabase.from('streaks').select('*');
-      if (sData && sData.length > 0) setStreaks(sData);
-
-      // 5. Notes
-      const { data: nData } = await supabase.from('notes').select('*').order('created_at', { ascending: false });
-      if (nData && nData.length > 0) setNotes(nData);
-
-      // 6. Flashcards
-      const { data: fcData } = await supabase.from('flashcards').select('*');
-      if (fcData && fcData.length > 0) setFlashcards(fcData);
-
-      // 7. Assignments
-      const { data: aData } = await supabase.from('assignments').select('*').order('due_date', { ascending: true });
-      if (aData && aData.length > 0) setAssignments(aData);
-
-      // 8. Study sessions
-      const { data: ssData } = await supabase.from('study_sessions').select('*');
-      if (ssData && ssData.length > 0) setStudySessions(ssData);
-
-      // 9. Datasets
-      const { data: dData } = await supabase.from('datasets').select('*').order('uploaded_at', { ascending: false });
-      if (dData && dData.length > 0) setDatasets(dData);
-
-      // 10. Experiments
-      const { data: expData } = await supabase.from('ml_experiments').select('*').order('created_at', { ascending: false });
-      if (expData && expData.length > 0) setExperiments(expData);
-
-      // 11. Snippets
-      const { data: snData } = await supabase.from('code_snippets').select('*').order('created_at', { ascending: false });
-      if (snData && snData.length > 0) setSnippets(snData);
-
-      // 12. Journal entries
-      const { data: jData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
-      if (jData && jData.length > 0) setJournalEntries(jData);
-
-      // 13. Categories (Merge Initial + LocalStorage + Supabase)
-      const allCats: CategoryItem[] = [...INITIAL_CATEGORIES];
-      try {
-        const saved = localStorage.getItem('dashboard_custom_categories');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((c: CategoryItem) => {
-              if (!allCats.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
-                allCats.push(c);
-              }
-            });
-          }
-        }
-      } catch (e) {}
-
-      try {
-        const { data: catData } = await supabase.from('categories').select('*');
-        if (catData && catData.length > 0) {
-          catData.forEach((c: CategoryItem) => {
-            if (!allCats.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
-              allCats.push(c);
-            }
-          });
-        }
-      } catch (catErr) {}
-
-      setCategories(allCats);
       setIsOnline(true);
     } catch (err) {
       console.warn('Using offline/local state:', err);
@@ -278,568 +280,627 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /* Only hit the network when a session actually exists; on the login screen
+     this saves 13 requests that RLS would reject anyway. */
   useEffect(() => {
-    refreshAll();
+    let cancelled = false;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      if (data.session) refreshAll();
+      else setIsLoading(false);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') refreshAll();
+      if (event === 'SIGNED_OUT') setIsOnline(false);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, [refreshAll]);
 
-  // STREAKS TRIGGER (Hanya bertambah 1x per hari kalender)
+  /* ---------------------------------------------------------------- *
+   * Streaks
+   * ---------------------------------------------------------------- */
   const triggerStreak = useCallback((module: 'finance' | 'study' | 'journal' | 'overall') => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const yesterdayDate = new Date();
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterday = yesterdayDate.toISOString().split('T')[0];
+    const yesterday = yesterdayDate.toISOString().slice(0, 10);
 
-    setStreaks((prev) =>
-      prev.map((s) => {
-        if (s.module === module || s.module === 'overall') {
-          // Jika sudah mencatat hari ini, jangan tambah streak lagi
-          if (s.last_logged_date === today) {
-            return {
-              ...s,
-              current_streak: Math.max(s.current_streak, 1),
-            };
-          }
+    setStreaks((prev) => {
+      let changed = false;
 
-          let nextStreak = 1;
-          // Jika kemarin aktif, lanjutkan streak berturut-turut
-          if (s.last_logged_date === yesterday) {
-            nextStreak = s.current_streak + 1;
-          } else {
-            // Jika streak terputus atau baru mulai
-            nextStreak = 1;
-          }
+      const next = prev.map((s) => {
+        if (s.module !== module && s.module !== 'overall') return s;
 
-          const nextLongest = Math.max(nextStreak, s.longest_streak);
-
-          // Sync streak ke Supabase
-          try {
-            supabase
-              .from('streaks')
-              .upsert(
-                {
-                  module: s.module,
-                  current_streak: nextStreak,
-                  longest_streak: nextLongest,
-                  last_logged_date: today,
-                },
-                { onConflict: 'module' }
-              )
-              .then();
-          } catch (err) {
-            console.warn('Streak sync error:', err);
-          }
-
-          return {
-            ...s,
-            current_streak: nextStreak,
-            longest_streak: nextLongest,
-            last_logged_date: today,
-          };
+        // Already counted today: nothing to write, nothing to sync.
+        if (s.last_logged_date === today) {
+          if (s.current_streak >= 1) return s;
+          changed = true;
+          return { ...s, current_streak: 1 };
         }
-        return s;
-      })
-    );
+
+        const nextStreak = s.last_logged_date === yesterday ? s.current_streak + 1 : 1;
+        const nextLongest = Math.max(nextStreak, s.longest_streak);
+        changed = true;
+
+        void supabase
+          .from('streaks')
+          .upsert(
+            {
+              module: s.module,
+              current_streak: nextStreak,
+              longest_streak: nextLongest,
+              last_logged_date: today,
+            },
+            { onConflict: 'module' }
+          )
+          .then(undefined, (err: unknown) => console.warn('Streak sync error:', err));
+
+        return {
+          ...s,
+          current_streak: nextStreak,
+          longest_streak: nextLongest,
+          last_logged_date: today,
+        };
+      });
+
+      // Bail out with the same reference so no consumer re-renders.
+      return changed ? next : prev;
+    });
   }, []);
 
-  // FINANCE: Add Transaction (Updates wallets balance & budget)
-  const addTransaction = async (tx: Omit<Transaction, 'id'>) => {
-    const newId = 'tx-' + Date.now();
-    const newTx: Transaction = { ...tx, id: newId };
+  /* ---------------------------------------------------------------- *
+   * Finance
+   * ---------------------------------------------------------------- */
+  const addTransaction = useCallback(
+    async (tx: Omit<Transaction, 'id'>) => {
+      const tempId = 'tx-' + Date.now();
+      const optimistic: Transaction = { ...tx, id: tempId };
 
-    const sourceWallet = wallets.find((w) => w.name.toLowerCase() === tx.payment_method.toLowerCase());
-    const destWallet = tx.to_payment_method
-      ? wallets.find((w) => w.name.toLowerCase() === tx.to_payment_method?.toLowerCase())
-      : null;
+      const currentWallets = walletsRef.current;
+      const source = currentWallets.find(
+        (w) => w.name.toLowerCase() === tx.payment_method.toLowerCase()
+      );
+      const dest = tx.to_payment_method
+        ? currentWallets.find(
+            (w) => w.name.toLowerCase() === tx.to_payment_method!.toLowerCase()
+          )
+        : undefined;
 
-    let newSourceBalance = sourceWallet ? sourceWallet.balance : 0;
-    let newDestBalance = destWallet ? destWallet.balance : 0;
+      let nextSource = source?.balance ?? 0;
+      let nextDest = dest?.balance ?? 0;
 
-    if (tx.type === 'transfer') {
-      if (sourceWallet) newSourceBalance = Math.max(0, sourceWallet.balance - tx.amount);
-      if (destWallet) newDestBalance = destWallet.balance + tx.amount;
-    } else {
-      const delta = tx.type === 'income' ? tx.amount : -tx.amount;
-      if (sourceWallet) newSourceBalance = Math.max(0, sourceWallet.balance + delta);
-    }
-
-    // Optimistic UI update
-    setTransactions((prev) => [newTx, ...prev]);
-
-    setWallets((prev) =>
-      prev.map((w) => {
-        if (sourceWallet && w.id === sourceWallet.id) return { ...w, balance: newSourceBalance };
-        if (destWallet && w.id === destWallet.id) return { ...w, balance: newDestBalance };
-        return w;
-      })
-    );
-
-    triggerStreak('finance');
-
-    // Sync to Supabase
-    try {
-      const { data, error } = await supabase.from('transactions').insert([tx]).select().single();
-      if (data && data.id) {
-        setTransactions((prev) => prev.map((t) => (t.id === newId ? data : t)));
+      if (tx.type === 'transfer') {
+        if (source) nextSource = Math.max(0, source.balance - tx.amount);
+        if (dest) nextDest = dest.balance + tx.amount;
+      } else if (source) {
+        const delta = tx.type === 'income' ? tx.amount : -tx.amount;
+        nextSource = Math.max(0, source.balance + delta);
       }
-      if (sourceWallet) {
-        await supabase.from('wallets').update({ balance: newSourceBalance }).eq('id', sourceWallet.id);
+
+      setTransactions((prev) => [optimistic, ...prev]);
+      if (source || dest) {
+        setWallets((prev) =>
+          prev.map((w) => {
+            if (source && w.id === source.id) return { ...w, balance: nextSource };
+            if (dest && w.id === dest.id) return { ...w, balance: nextDest };
+            return w;
+          })
+        );
       }
-      if (destWallet) {
-        await supabase.from('wallets').update({ balance: newDestBalance }).eq('id', destWallet.id);
+
+      triggerStreak('finance');
+
+      try {
+        // Insert + both balance writes go out together instead of serially.
+        const [inserted] = await Promise.all([
+          supabase.from('transactions').insert([tx]).select().single(),
+          source
+            ? supabase.from('wallets').update({ balance: nextSource }).eq('id', source.id)
+            : Promise.resolve(null),
+          dest
+            ? supabase.from('wallets').update({ balance: nextDest }).eq('id', dest.id)
+            : Promise.resolve(null),
+        ]);
+
+        if (inserted?.data?.id) {
+          const row = inserted.data as Transaction;
+          setTransactions((prev) => prev.map((t) => (t.id === tempId ? row : t)));
+        }
+      } catch (err) {
+        console.warn('Could not sync transaction to Supabase:', err);
       }
-    } catch (err) {
-      console.warn('Could not sync transaction to Supabase:', err);
-    }
-  };
+    },
+    [triggerStreak]
+  );
 
-  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
-    const oldTx = transactions.find((t) => t.id === id);
-    if (!oldTx) return;
-
-    const newTx: Transaction = { ...oldTx, ...updates };
-
-    // Update transactions state optimistically
-    setTransactions((prev) => prev.map((t) => (t.id === id ? newTx : t)));
+  const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>) => {
+    let existed = false;
+    setTransactions((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      if (idx === -1) return prev;
+      existed = true;
+      const next = prev.slice();
+      next[idx] = { ...next[idx], ...updates };
+      return next;
+    });
+    if (!existed) return;
 
     try {
       await supabase.from('transactions').update(updates).eq('id', id);
     } catch (err) {
       console.warn('Update transaction error:', err);
     }
-  };
+  }, []);
 
-  const deleteTransaction = async (id: string) => {
-    const txToDelete = transactions.find((t) => t.id === id);
+  const deleteTransaction = useCallback(async (id: string) => {
+    const target = transactionsRef.current.find((t) => t.id === id);
     setTransactions((prev) => prev.filter((t) => t.id !== id));
 
-    // Track deleted IDs in localStorage so deleted mock/real transactions never return
-    try {
-      const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
-      const deletedIds: string[] = deletedTxRaw ? JSON.parse(deletedTxRaw) : [];
-      if (!deletedIds.includes(id)) {
-        deletedIds.push(id);
-        localStorage.setItem('dashboard_deleted_tx_ids', JSON.stringify(deletedIds));
-      }
-    } catch (e) {}
+    // Tombstone so a deleted mock/remote row never reappears after a refresh.
+    const deleted = readJSON<string[]>(LS_DELETED_TX, []);
+    if (!deleted.includes(id)) writeJSON(LS_DELETED_TX, [...deleted, id]);
 
-    if (txToDelete) {
-      const sourceWallet = wallets.find((w) => w.name.toLowerCase() === txToDelete.payment_method.toLowerCase());
-      const destWallet = txToDelete.to_payment_method
-        ? wallets.find((w) => w.name.toLowerCase() === txToDelete.to_payment_method?.toLowerCase())
-        : null;
+    const writes: PromiseLike<unknown>[] = [
+      supabase.from('transactions').delete().eq('id', id),
+    ];
 
-      if (txToDelete.type === 'transfer') {
-        const newSourceBalance = sourceWallet ? sourceWallet.balance + txToDelete.amount : 0;
-        const newDestBalance = destWallet ? Math.max(0, destWallet.balance - txToDelete.amount) : 0;
+    if (target) {
+      const currentWallets = walletsRef.current;
+      const source = currentWallets.find(
+        (w) => w.name.toLowerCase() === target.payment_method.toLowerCase()
+      );
+      const dest = target.to_payment_method
+        ? currentWallets.find(
+            (w) => w.name.toLowerCase() === target.to_payment_method!.toLowerCase()
+          )
+        : undefined;
 
-        setWallets((prev) =>
-          prev.map((w) => {
-            if (sourceWallet && w.id === sourceWallet.id) return { ...w, balance: newSourceBalance };
-            if (destWallet && w.id === destWallet.id) return { ...w, balance: newDestBalance };
-            return w;
-          })
-        );
+      if (target.type === 'transfer') {
+        const revertedSource = source ? source.balance + target.amount : 0;
+        const revertedDest = dest ? Math.max(0, dest.balance - target.amount) : 0;
 
-        try {
-          if (sourceWallet) await supabase.from('wallets').update({ balance: newSourceBalance }).eq('id', sourceWallet.id);
-          if (destWallet) await supabase.from('wallets').update({ balance: newDestBalance }).eq('id', destWallet.id);
-        } catch (err) {
-          console.warn('Could not sync wallet revert to Supabase:', err);
+        if (source || dest) {
+          setWallets((prev) =>
+            prev.map((w) => {
+              if (source && w.id === source.id) return { ...w, balance: revertedSource };
+              if (dest && w.id === dest.id) return { ...w, balance: revertedDest };
+              return w;
+            })
+          );
         }
-      } else if (sourceWallet) {
-        const revert = txToDelete.type === 'income' ? -txToDelete.amount : txToDelete.amount;
-        const newBalance = Math.max(0, sourceWallet.balance + revert);
-
-        setWallets((prev) =>
-          prev.map((w) => (w.id === sourceWallet.id ? { ...w, balance: newBalance } : w))
-        );
-
-        try {
-          await supabase.from('wallets').update({ balance: newBalance }).eq('id', sourceWallet.id);
-        } catch (err) {
-          console.warn('Could not sync wallet revert to Supabase:', err);
+        if (source) {
+          writes.push(
+            supabase.from('wallets').update({ balance: revertedSource }).eq('id', source.id)
+          );
         }
+        if (dest) {
+          writes.push(
+            supabase.from('wallets').update({ balance: revertedDest }).eq('id', dest.id)
+          );
+        }
+      } else if (source) {
+        const revert = target.type === 'income' ? -target.amount : target.amount;
+        const balance = Math.max(0, source.balance + revert);
+
+        setWallets((prev) => prev.map((w) => (w.id === source.id ? { ...w, balance } : w)));
+        writes.push(supabase.from('wallets').update({ balance }).eq('id', source.id));
       }
     }
 
     try {
-      await supabase.from('transactions').delete().eq('id', id);
+      await Promise.all(writes);
     } catch (err) {
       console.warn('Delete transaction error:', err);
     }
-  };
+  }, []);
 
-  const addWallet = async (w: Omit<Wallet, 'id'>) => {
-    const newId = 'w-' + Date.now();
-    const newWallet = { ...w, id: newId };
-    setWallets((prev) => [...prev, newWallet]);
+  const addWallet = useCallback(async (w: Omit<Wallet, 'id'>) => {
+    setWallets((prev) => [...prev, { ...w, id: 'w-' + Date.now() }]);
     try {
       await supabase.from('wallets').insert([w]);
     } catch (err) {
       console.warn('Add wallet error:', err);
     }
-  };
+  }, []);
 
-  const updateWallet = async (id: string, updates: Partial<Wallet>) => {
+  const updateWallet = useCallback(async (id: string, updates: Partial<Wallet>) => {
     setWallets((prev) => prev.map((w) => (w.id === id ? { ...w, ...updates } : w)));
     try {
       await supabase.from('wallets').update(updates).eq('id', id);
     } catch (err) {
       console.warn('Update wallet error:', err);
     }
-  };
+  }, []);
 
-  const deleteWallet = async (id: string) => {
+  const deleteWallet = useCallback(async (id: string) => {
     setWallets((prev) => prev.filter((w) => w.id !== id));
     try {
       await supabase.from('wallets').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete wallet error:', err);
     }
-  };
+  }, []);
 
-  const updateBudget = async (category: string, limit_amount: number) => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+  const updateBudget = useCallback(async (category: string, limit_amount: number) => {
+    const month_year = new Date().toISOString().slice(0, 7);
+    const key = category.toLowerCase();
+
     setBudgets((prev) => {
-      const exists = prev.find((b) => b.category.toLowerCase() === category.toLowerCase());
-      if (exists) {
-        return prev.map((b) =>
-          b.category.toLowerCase() === category.toLowerCase() ? { ...b, limit_amount } : b
-        );
+      const idx = prev.findIndex((b) => b.category.toLowerCase() === key);
+      if (idx === -1) {
+        return [...prev, { id: 'b-' + Date.now(), category, limit_amount, month_year }];
       }
-      return [...prev, { id: 'b-' + Date.now(), category, limit_amount, month_year: currentMonth }];
+      const next = prev.slice();
+      next[idx] = { ...next[idx], limit_amount };
+      return next;
     });
 
     try {
       await supabase
         .from('budgets')
-        .upsert({ category, limit_amount, month_year: currentMonth }, { onConflict: 'category,month_year' });
+        .upsert({ category, limit_amount, month_year }, { onConflict: 'category,month_year' });
     } catch (err) {
       console.warn('Update budget error:', err);
     }
-  };
+  }, []);
 
-  const addCategory = async (c: Omit<CategoryItem, 'id'>) => {
-    const newCat: CategoryItem = {
-      ...c,
-      id: 'cat-' + Date.now(),
-    };
+  const addCategory = useCallback(async (c: Omit<CategoryItem, 'id'>) => {
+    const newCat: CategoryItem = { ...c, id: 'cat-' + Date.now() };
+    const key = c.name.toLowerCase();
+
+    let added = false;
     setCategories((prev) => {
-      if (prev.some((item) => item.name.toLowerCase() === c.name.toLowerCase())) {
-        return prev;
-      }
+      if (prev.some((item) => item.name.toLowerCase() === key)) return prev;
+      added = true;
       const updated = [...prev, newCat];
-      try {
-        localStorage.setItem('dashboard_custom_categories', JSON.stringify(updated));
-      } catch (e) {}
+      writeJSON(LS_CATEGORIES, updated);
       return updated;
     });
+    if (!added) return;
 
     try {
       await supabase.from('categories').insert([newCat]);
-    } catch (err) {
-      // Supabase table fallback
+    } catch {
+      /* table may not exist — localStorage copy is authoritative */
     }
-  };
+  }, []);
 
-  const deleteCategory = async (id: string) => {
+  const deleteCategory = useCallback(async (id: string) => {
     setCategories((prev) => {
       const updated = prev.filter((c) => c.id !== id);
-      try {
-        localStorage.setItem('dashboard_custom_categories', JSON.stringify(updated));
-      } catch (e) {}
+      if (updated.length === prev.length) return prev;
+      writeJSON(LS_CATEGORIES, updated);
       return updated;
     });
 
     try {
       await supabase.from('categories').delete().eq('id', id);
-    } catch (err) {
-      // Supabase table fallback
+    } catch {
+      /* ignore */
     }
-  };
+  }, []);
 
-  // STUDY TOOLS: Notes & Flashcards
-  const addNote = async (note: Omit<Note, 'id' | 'created_at'>): Promise<Note> => {
-    const newId = 'n-' + Date.now();
-    const newNote: Note = {
-      ...note,
-      id: newId,
-      created_at: new Date().toISOString().split('T')[0],
-    };
-    setNotes((prev) => [newNote, ...prev]);
-    triggerStreak('study');
+  /* ---------------------------------------------------------------- *
+   * Study
+   * ---------------------------------------------------------------- */
+  const addNote = useCallback(
+    async (note: Omit<Note, 'id' | 'created_at'>): Promise<Note> => {
+      const optimistic: Note = { ...note, id: 'n-' + Date.now(), created_at: todayISO() };
+      setNotes((prev) => [optimistic, ...prev]);
+      triggerStreak('study');
 
-    try {
-      const { data } = await supabase.from('notes').insert([note]).select().single();
-      if (data) return data;
-    } catch (err) {
-      console.warn('Add note error:', err);
-    }
-    return newNote;
-  };
+      try {
+        const { data } = await supabase.from('notes').insert([note]).select().single();
+        if (data) {
+          const row = data as Note;
+          setNotes((prev) => prev.map((n) => (n.id === optimistic.id ? row : n)));
+          return row;
+        }
+      } catch (err) {
+        console.warn('Add note error:', err);
+      }
+      return optimistic;
+    },
+    [triggerStreak]
+  );
 
-  const updateNote = async (id: string, updates: Partial<Note>) => {
+  const updateNote = useCallback(async (id: string, updates: Partial<Note>) => {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...updates } : n)));
     try {
       await supabase.from('notes').update(updates).eq('id', id);
     } catch (err) {
       console.warn('Update note error:', err);
     }
-  };
+  }, []);
 
-  const deleteNote = async (id: string) => {
+  const deleteNote = useCallback(async (id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
     try {
       await supabase.from('notes').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete note error:', err);
     }
-  };
+  }, []);
 
-  const addFlashcard = async (fc: Omit<Flashcard, 'id'>) => {
-    const newFc: Flashcard = { ...fc, id: 'fc-' + Date.now() };
-    setFlashcards((prev) => [newFc, ...prev]);
+  const addFlashcard = useCallback(async (fc: Omit<Flashcard, 'id'>) => {
+    setFlashcards((prev) => [{ ...fc, id: 'fc-' + Date.now() }, ...prev]);
     try {
       await supabase.from('flashcards').insert([fc]);
     } catch (err) {
       console.warn('Add flashcard error:', err);
     }
-  };
+  }, []);
 
-  const updateFlashcard = async (id: string, updates: Partial<Flashcard>) => {
+  const updateFlashcard = useCallback(async (id: string, updates: Partial<Flashcard>) => {
     setFlashcards((prev) => prev.map((fc) => (fc.id === id ? { ...fc, ...updates } : fc)));
     try {
       await supabase.from('flashcards').update(updates).eq('id', id);
     } catch (err) {
       console.warn('Update flashcard error:', err);
     }
-  };
+  }, []);
 
-  const reviewFlashcard = async (id: string, performance: 'easy' | 'medium' | 'hard') => {
-    triggerStreak('study');
-    setFlashcards((prev) =>
-      prev.map((fc) => {
-        if (fc.id === id) {
-          const daysToAdd = performance === 'easy' ? 4 : performance === 'medium' ? 2 : 1;
-          const nextDate = new Date();
-          nextDate.setDate(nextDate.getDate() + daysToAdd);
-          return {
-            ...fc,
-            repetition_count: fc.repetition_count + 1,
-            next_review_date: nextDate.toISOString().split('T')[0],
-          };
-        }
-        return fc;
-      })
-    );
-  };
+  const reviewFlashcard = useCallback(
+    async (id: string, performance: 'easy' | 'medium' | 'hard') => {
+      triggerStreak('study');
 
-  const deleteFlashcard = async (id: string) => {
+      const daysToAdd = performance === 'easy' ? 4 : performance === 'medium' ? 2 : 1;
+      const next = new Date();
+      next.setDate(next.getDate() + daysToAdd);
+      const nextReview = next.toISOString().slice(0, 10);
+
+      let repetition = 0;
+      setFlashcards((prev) =>
+        prev.map((fc) => {
+          if (fc.id !== id) return fc;
+          repetition = fc.repetition_count + 1;
+          return { ...fc, repetition_count: repetition, next_review_date: nextReview };
+        })
+      );
+
+      // The old implementation never persisted a review — progress was lost
+      // on the next refresh.
+      try {
+        await supabase
+          .from('flashcards')
+          .update({ repetition_count: repetition, next_review_date: nextReview })
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Review flashcard sync error:', err);
+      }
+    },
+    [triggerStreak]
+  );
+
+  const deleteFlashcard = useCallback(async (id: string) => {
     setFlashcards((prev) => prev.filter((fc) => fc.id !== id));
     try {
       await supabase.from('flashcards').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete flashcard error:', err);
     }
-  };
+  }, []);
 
-  // STUDY: Assignments & Sessions
-  const addAssignment = async (a: Omit<Assignment, 'id'>) => {
-    const newA: Assignment = { ...a, id: 'a-' + Date.now() };
-    setAssignments((prev) => [...prev, newA]);
+  const addAssignment = useCallback(async (a: Omit<Assignment, 'id'>) => {
+    setAssignments((prev) => [...prev, { ...a, id: 'a-' + Date.now() }]);
     try {
       await supabase.from('assignments').insert([a]);
     } catch (err) {
       console.warn('Add assignment error:', err);
     }
-  };
+  }, []);
 
-  const toggleAssignment = async (id: string) => {
+  const toggleAssignment = useCallback(async (id: string) => {
+    let nextStatus: Assignment['status'] = 'pending';
+
     setAssignments((prev) =>
       prev.map((a) => {
-        if (a.id === id) {
-          const nextStatus = a.status === 'completed' ? 'pending' : 'completed';
-          return { ...a, status: nextStatus };
-        }
-        return a;
+        if (a.id !== id) return a;
+        nextStatus = a.status === 'completed' ? 'pending' : 'completed';
+        return { ...a, status: nextStatus };
       })
     );
-  };
 
-  const deleteAssignment = async (id: string) => {
+    // Previously local-only: ticking a task was forgotten on reload.
+    try {
+      await supabase.from('assignments').update({ status: nextStatus }).eq('id', id);
+    } catch (err) {
+      console.warn('Toggle assignment sync error:', err);
+    }
+  }, []);
+
+  const deleteAssignment = useCallback(async (id: string) => {
     setAssignments((prev) => prev.filter((a) => a.id !== id));
     try {
       await supabase.from('assignments').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete assignment error:', err);
     }
-  };
+  }, []);
 
-  const logStudySession = async (session: Omit<StudySession, 'id'>) => {
-    const newSession: StudySession = { ...session, id: 'ss-' + Date.now() };
-    setStudySessions((prev) => [newSession, ...prev]);
-    triggerStreak('study');
-    try {
-      await supabase.from('study_sessions').insert([session]);
-    } catch (err) {
-      console.warn('Log study session error:', err);
-    }
-  };
+  const logStudySession = useCallback(
+    async (session: Omit<StudySession, 'id'>) => {
+      setStudySessions((prev) => [{ ...session, id: 'ss-' + Date.now() }, ...prev]);
+      triggerStreak('study');
+      try {
+        await supabase.from('study_sessions').insert([session]);
+      } catch (err) {
+        console.warn('Log study session error:', err);
+      }
+    },
+    [triggerStreak]
+  );
 
-  // DATA SCIENCE: Datasets, Experiments & Snippets
-  const addDataset = async (d: Omit<Dataset, 'id' | 'uploaded_at'>) => {
-    const newD: Dataset = {
-      ...d,
-      id: 'd-' + Date.now(),
-      uploaded_at: new Date().toISOString().split('T')[0],
-    };
-    setDatasets((prev) => [newD, ...prev]);
+  /* ---------------------------------------------------------------- *
+   * Data Science
+   * ---------------------------------------------------------------- */
+  const addDataset = useCallback(async (d: Omit<Dataset, 'id' | 'uploaded_at'>) => {
+    setDatasets((prev) => [{ ...d, id: 'd-' + Date.now(), uploaded_at: todayISO() }, ...prev]);
     try {
       await supabase.from('datasets').insert([d]);
     } catch (err) {
       console.warn('Add dataset error:', err);
     }
-  };
+  }, []);
 
-  const deleteDataset = async (id: string) => {
+  const deleteDataset = useCallback(async (id: string) => {
     setDatasets((prev) => prev.filter((d) => d.id !== id));
     try {
       await supabase.from('datasets').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete dataset error:', err);
     }
-  };
+  }, []);
 
-  const addExperiment = async (e: Omit<MLExperiment, 'id' | 'created_at'>) => {
-    const newExp: MLExperiment = {
-      ...e,
-      id: 'exp-' + Date.now(),
-      created_at: new Date().toISOString().split('T')[0],
-    };
-    setExperiments((prev) => [newExp, ...prev]);
+  const addExperiment = useCallback(async (e: Omit<MLExperiment, 'id' | 'created_at'>) => {
+    setExperiments((prev) => [
+      { ...e, id: 'exp-' + Date.now(), created_at: todayISO() },
+      ...prev,
+    ]);
     try {
       await supabase.from('ml_experiments').insert([e]);
     } catch (err) {
       console.warn('Add experiment error:', err);
     }
-  };
+  }, []);
 
-  const deleteExperiment = async (id: string) => {
+  const deleteExperiment = useCallback(async (id: string) => {
     setExperiments((prev) => prev.filter((e) => e.id !== id));
     try {
       await supabase.from('ml_experiments').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete experiment error:', err);
     }
-  };
+  }, []);
 
-  const addSnippet = async (s: Omit<CodeSnippet, 'id' | 'created_at'>) => {
-    const newS: CodeSnippet = {
-      ...s,
-      id: 'sn-' + Date.now(),
-      created_at: new Date().toISOString().split('T')[0],
-    };
-    setSnippets((prev) => [newS, ...prev]);
+  const addSnippet = useCallback(async (s: Omit<CodeSnippet, 'id' | 'created_at'>) => {
+    setSnippets((prev) => [{ ...s, id: 'sn-' + Date.now(), created_at: todayISO() }, ...prev]);
     try {
       await supabase.from('code_snippets').insert([s]);
     } catch (err) {
       console.warn('Add snippet error:', err);
     }
-  };
+  }, []);
 
-  const deleteSnippet = async (id: string) => {
+  const deleteSnippet = useCallback(async (id: string) => {
     setSnippets((prev) => prev.filter((s) => s.id !== id));
     try {
       await supabase.from('code_snippets').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete snippet error:', err);
     }
-  };
+  }, []);
 
-  // MOOD & JOURNAL
-  const addJournalEntry = async (entry: Omit<JournalEntry, 'id' | 'created_at'>) => {
-    const newEntry: JournalEntry = {
-      ...entry,
-      id: 'j-' + Date.now(),
-      created_at: new Date().toISOString(),
-    };
-    setJournalEntries((prev) => [newEntry, ...prev]);
-    triggerStreak('journal');
-    try {
-      await supabase.from('journal_entries').insert([entry]);
-    } catch (err) {
-      console.warn('Add journal entry error:', err);
-    }
-  };
+  /* ---------------------------------------------------------------- *
+   * Journal
+   * ---------------------------------------------------------------- */
+  const addJournalEntry = useCallback(
+    async (entry: Omit<JournalEntry, 'id' | 'created_at'>) => {
+      setJournalEntries((prev) => [
+        { ...entry, id: 'j-' + Date.now(), created_at: new Date().toISOString() },
+        ...prev,
+      ]);
+      triggerStreak('journal');
+      try {
+        await supabase.from('journal_entries').insert([entry]);
+      } catch (err) {
+        console.warn('Add journal entry error:', err);
+      }
+    },
+    [triggerStreak]
+  );
 
-  const deleteJournalEntry = async (id: string) => {
+  const deleteJournalEntry = useCallback(async (id: string) => {
     setJournalEntries((prev) => prev.filter((j) => j.id !== id));
     try {
       await supabase.from('journal_entries').delete().eq('id', id);
     } catch (err) {
       console.warn('Delete journal entry error:', err);
     }
-  };
+  }, []);
+
+  /* ---------------------------------------------------------------- *
+   * Context values
+   * ---------------------------------------------------------------- */
+  const data = useMemo<DashboardData>(
+    () => ({
+      wallets, categories, transactions, budgets, streaks,
+      notes, flashcards, assignments, studySessions,
+      datasets, experiments, snippets, journalEntries,
+      isLoading, isOnline,
+    }),
+    [
+      wallets, categories, transactions, budgets, streaks,
+      notes, flashcards, assignments, studySessions,
+      datasets, experiments, snippets, journalEntries,
+      isLoading, isOnline,
+    ]
+  );
+
+  // Every member is a stable useCallback, so this object is built once.
+  const actions = useMemo<DashboardActions>(
+    () => ({
+      addTransaction, updateTransaction, deleteTransaction,
+      addWallet, updateWallet, deleteWallet,
+      updateBudget, addCategory, deleteCategory, triggerStreak,
+      addNote, updateNote, deleteNote,
+      addFlashcard, updateFlashcard, reviewFlashcard, deleteFlashcard,
+      addAssignment, toggleAssignment, deleteAssignment, logStudySession,
+      addDataset, deleteDataset,
+      addExperiment, deleteExperiment,
+      addSnippet, deleteSnippet,
+      addJournalEntry, deleteJournalEntry,
+      refreshAll,
+    }),
+    [
+      addTransaction, updateTransaction, deleteTransaction,
+      addWallet, updateWallet, deleteWallet,
+      updateBudget, addCategory, deleteCategory, triggerStreak,
+      addNote, updateNote, deleteNote,
+      addFlashcard, updateFlashcard, reviewFlashcard, deleteFlashcard,
+      addAssignment, toggleAssignment, deleteAssignment, logStudySession,
+      addDataset, deleteDataset,
+      addExperiment, deleteExperiment,
+      addSnippet, deleteSnippet,
+      addJournalEntry, deleteJournalEntry,
+      refreshAll,
+    ]
+  );
 
   return (
-    <DashboardContext.Provider
-      value={{
-        wallets,
-        categories,
-        transactions,
-        budgets,
-        addTransaction,
-        updateTransaction,
-        deleteTransaction,
-        addWallet,
-        updateWallet,
-        deleteWallet,
-        updateBudget,
-        addCategory,
-        deleteCategory,
-        streaks,
-        triggerStreak,
-        notes,
-        flashcards,
-        assignments,
-        studySessions,
-        addNote,
-        updateNote,
-        deleteNote,
-        addFlashcard,
-        updateFlashcard,
-        reviewFlashcard,
-        deleteFlashcard,
-        addAssignment,
-        toggleAssignment,
-        deleteAssignment,
-        logStudySession,
-        datasets,
-        experiments,
-        snippets,
-        addDataset,
-        deleteDataset,
-        addExperiment,
-        deleteExperiment,
-        addSnippet,
-        deleteSnippet,
-        journalEntries,
-        addJournalEntry,
-        deleteJournalEntry,
-        isLoading,
-        isOnline,
-        refreshAll,
-      }}
-    >
-      {children}
-    </DashboardContext.Provider>
+    <DashboardActionsContext.Provider value={actions}>
+      <DashboardDataContext.Provider value={data}>{children}</DashboardDataContext.Provider>
+    </DashboardActionsContext.Provider>
   );
 }
 
-export function useDashboard() {
-  const context = useContext(DashboardContext);
-  if (!context) {
-    throw new Error('useDashboard must be used within a DashboardProvider');
-  }
-  return context;
+/** Subscribes to data. Re-renders whenever any slice changes. */
+export function useDashboardData(): DashboardData {
+  const ctx = useContext(DashboardDataContext);
+  if (!ctx) throw new Error('useDashboardData must be used within a DashboardProvider');
+  return ctx;
+}
+
+/** Subscribes to actions only — never re-renders after mount. */
+export function useDashboardActions(): DashboardActions {
+  const ctx = useContext(DashboardActionsContext);
+  if (!ctx) throw new Error('useDashboardActions must be used within a DashboardProvider');
+  return ctx;
+}
+
+/**
+ * Back-compat facade for existing call sites.
+ * Prefer useDashboardActions() in components that only dispatch — it keeps
+ * them out of the data subscription entirely.
+ */
+export function useDashboard(): DashboardData & DashboardActions {
+  const data = useDashboardData();
+  const actions = useDashboardActions();
+  return useMemo(() => ({ ...data, ...actions }), [data, actions]);
 }

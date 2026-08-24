@@ -25,6 +25,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
   const [isFlipped, setIsFlipped] = useState(false);
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('all');
   const [flashcardSearchQuery, setFlashcardSearchQuery] = useState('');
+  const [deckDone, setDeckDone] = useState(false);
 
   const [editingFlashcard, setEditingFlashcard] = useState<Flashcard | null>(null);
   const [editFcSubject, setEditFcSubject] = useState('');
@@ -32,16 +33,29 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
   const [editFcAnswer, setEditFcAnswer] = useState('');
 
   const filteredFlashcards = useMemo(() => {
+    const q = flashcardSearchQuery.trim().toLowerCase();
+    const subjectKey = selectedSubjectFilter.toLowerCase();
+    const allSubjects = selectedSubjectFilter === 'all';
+
+    if (!q && allSubjects) return flashcards;
+
     return flashcards.filter((fc) => {
-      const matchesSubject = selectedSubjectFilter === 'all' || fc.subject.toLowerCase() === selectedSubjectFilter.toLowerCase();
-      const q = flashcardSearchQuery.toLowerCase();
-      const matchesSearch =
+      if (!allSubjects && fc.subject.toLowerCase() !== subjectKey) return false;
+      if (!q) return true;
+      return (
         fc.question.toLowerCase().includes(q) ||
         fc.answer.toLowerCase().includes(q) ||
-        fc.subject.toLowerCase().includes(q);
-      return matchesSubject && matchesSearch;
+        fc.subject.toLowerCase().includes(q)
+      );
     });
   }, [flashcards, selectedSubjectFilter, flashcardSearchQuery]);
+
+  // Building this Set inline in JSX re-scanned every card on every render,
+  // including on each keystroke in the search box.
+  const subjects = useMemo(
+    () => Array.from(new Set(flashcards.map((f) => f.subject))),
+    [flashcards]
+  );
 
   useEffect(() => {
     if (activeCardIndex >= filteredFlashcards.length && filteredFlashcards.length > 0) {
@@ -60,7 +74,8 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
       setActiveCardIndex((prev) => prev + 1);
     } else {
       confetti({ particleCount: 100, spread: 70 });
-      alert('Hebat! Kamu telah menyelesaikan semua flashcard di deck ini!');
+      // alert() blocks the main thread, freezing the confetti mid-frame.
+      setDeckDone(true);
       setActiveCardIndex(0);
     }
   };
@@ -111,7 +126,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
             className="input-filter"
           >
             <option value="all">Semua Subjek ({flashcards.length})</option>
-            {Array.from(new Set(flashcards.map((f) => f.subject))).map((subj) => (
+            {subjects.map((subj) => (
               <option key={subj} value={subj}>
                 {subj}
               </option>
@@ -121,7 +136,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
 
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-[#7F847C] absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Cari soal..."
@@ -142,6 +157,21 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
         </div>
       </div>
 
+      {deckDone && (
+        <div role="status" className="card-muted flex items-center justify-between gap-3">
+          <span className="text-xs font-bold">
+            Hebat! Kamu telah menyelesaikan semua flashcard di deck ini.
+          </span>
+          <button
+            type="button"
+            onClick={() => setDeckDone(false)}
+            className="text-[10px] font-black text-muted shrink-0"
+          >
+            TUTUP
+          </button>
+        </div>
+      )}
+
       {/* Interactive Flashcard Player */}
       {filteredFlashcards.length > 0 && currentFlashcard ? (
         <div className="space-y-4">
@@ -149,8 +179,8 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
             onClick={() => setIsFlipped(!isFlipped)}
             className={`relative min-h-[320px] p-6 sm:p-8 rounded-3xl cursor-pointer transition-all duration-300 flex flex-col justify-between border shadow-xl select-none ${
               isFlipped
-                ? 'bg-[#111111] text-white border-black/80'
-                : 'bg-white text-[#111111] border-black/10 hover:shadow-2xl'
+                ? 'flashcard-face-back'
+                : 'flashcard-face-front hover:shadow-2xl'
             }`}
           >
             {/* Card Top Bar */}
@@ -173,7 +203,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
                   onClick={() => handleOpenEditFlashcard(currentFlashcard)}
                   title="Edit Flashcard"
                   className={`p-1.5 rounded-xl transition-colors ${
-                    isFlipped ? 'hover:bg-white/20 text-white' : 'hover:bg-black/10 text-[#7F847C]'
+                    isFlipped ? 'hover:bg-white/20' : 'hover:bg-black/10 dark:hover:bg-white/10 text-muted'
                   }`}
                 >
                   <Edit3 className="w-4 h-4" />
@@ -194,9 +224,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
                 {isFlipped ? 'Jawaban / Penjelasan' : 'Pertanyaan (Front Side)'}
               </span>
               <h3
-                className={`text-lg sm:text-xl font-extrabold leading-relaxed ${
-                  isFlipped ? 'text-white' : 'text-[#111111]'
-                }`}
+                className="text-lg sm:text-xl font-extrabold leading-relaxed"
               >
                 {isFlipped ? currentFlashcard.answer : currentFlashcard.question}
               </h3>
@@ -241,7 +269,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="text-xs text-[#7F847C] font-semibold text-center hidden sm:block">
+              <div className="text-xs text-muted font-semibold text-center hidden sm:block">
                 Balik kartu untuk memberi rating pemahaman
               </div>
             )}
@@ -257,8 +285,8 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
         </div>
       ) : (
         <div className="card-base p-12 text-center">
-          <BookOpen className="w-8 h-8 text-[#7F847C] mx-auto mb-2" />
-          <p className="text-sm font-bold text-[#111111]">
+          <BookOpen className="w-8 h-8 text-muted mx-auto mb-2" />
+          <p className="text-sm font-bold">
             {flashcardSearchQuery ? 'Tidak ada flashcard yang cocok dengan pencarian.' : 'Belum ada flashcard di database.'}
           </p>
           <button onClick={onOpenQuickAdd} className="btn-primary mt-4 mx-auto">
@@ -277,22 +305,22 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
           {filteredFlashcards.map((fc, idx) => (
             <div
               key={fc.id}
-              className={`py-3.5 px-3 rounded-2xl flex items-center justify-between gap-3 hover:bg-[#EDEFEB]/40 transition-colors ${
-                activeCardIndex === idx ? 'bg-[#EDEFEB]/60' : ''
+              className={`py-3.5 px-3 rounded-2xl flex items-center justify-between gap-3 row-hover ${
+                activeCardIndex === idx ? 'bg-subtle-soft' : ''
               }`}
             >
               <div className="flex items-start gap-3 flex-1 min-w-0 cursor-pointer" onClick={() => setActiveCardIndex(idx)}>
-                <span className="w-6 h-6 rounded-full bg-[#EDEFEB] text-[#111111] text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                <span className="w-6 h-6 rounded-full bg-subtle text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
                   {idx + 1}
                 </span>
                 <div className="truncate flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-[#111111] truncate">{fc.question}</span>
+                    <span className="text-xs font-bold truncate">{fc.question}</span>
                     <span className="badge badge-neutral text-[9px]">
                       {fc.subject}
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#7F847C] truncate mt-0.5">{fc.answer}</p>
+                  <p className="text-[11px] text-muted truncate mt-0.5">{fc.answer}</p>
                 </div>
               </div>
 
@@ -355,7 +383,7 @@ export const FlashcardsTab: React.FC<FlashcardsTabProps> = ({
               className="input-field"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+          <div className="flex justify-end gap-2 pt-2 border-t border-subtle">
             <button
               type="button"
               onClick={() => setEditingFlashcard(null)}

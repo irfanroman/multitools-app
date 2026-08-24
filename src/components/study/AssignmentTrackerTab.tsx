@@ -1,8 +1,17 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Plus, Check, Trash2 } from 'lucide-react';
 import { Assignment } from '@/lib/types';
+
+// One formatter for the whole list. `toLocaleDateString` with an options
+// object constructs a fresh Intl.DateTimeFormat per row, per render.
+const DUE_FMT = new Intl.DateTimeFormat('id-ID', {
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 interface AssignmentTrackerTabProps {
   assignments: Assignment[];
@@ -11,12 +20,25 @@ interface AssignmentTrackerTabProps {
   onOpenQuickAdd: () => void;
 }
 
-export const AssignmentTrackerTab: React.FC<AssignmentTrackerTabProps> = ({
+const AssignmentTrackerTabImpl: React.FC<AssignmentTrackerTabProps> = ({
   assignments,
   onToggleAssignment,
   onDeleteAssignment,
   onOpenQuickAdd,
 }) => {
+  // Pre-format once per assignments change instead of on every render.
+  const rows = useMemo(
+    () =>
+      assignments.map((a) => {
+        const due = new Date(a.due_date);
+        return {
+          a,
+          dueLabel: Number.isNaN(due.getTime()) ? a.due_date : DUE_FMT.format(due),
+        };
+      }),
+    [assignments]
+  );
+
   return (
     <section className="card-base space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -31,11 +53,11 @@ export const AssignmentTrackerTab: React.FC<AssignmentTrackerTabProps> = ({
       </div>
 
       <div className="item-list">
-        {assignments.length > 0 ? (
-          assignments.map((a) => (
+        {rows.length > 0 ? (
+          rows.map(({ a, dueLabel }) => (
             <div
               key={a.id}
-              className="py-4 flex items-center justify-between hover:bg-[#EDEFEB]/30 px-3 rounded-2xl transition-colors"
+              className="py-4 flex items-center justify-between row-hover px-3 rounded-2xl"
             >
               <div className="flex items-center gap-3">
                 <button
@@ -43,7 +65,7 @@ export const AssignmentTrackerTab: React.FC<AssignmentTrackerTabProps> = ({
                   className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
                     a.status === 'completed'
                       ? 'bg-emerald-500 text-white'
-                      : 'border-2 border-black/20 hover:border-black'
+                      : 'border-2 border-black/20 dark:border-white/25 hover:border-black dark:hover:border-white'
                   }`}
                 >
                   {a.status === 'completed' && <Check className="w-4 h-4" />}
@@ -52,22 +74,15 @@ export const AssignmentTrackerTab: React.FC<AssignmentTrackerTabProps> = ({
                 <div>
                   <h4
                     className={`text-sm font-bold ${
-                      a.status === 'completed' ? 'line-through text-[#7F847C]' : 'text-[#111111]'
+                      a.status === 'completed' ? 'line-through text-muted' : ''
                     }`}
                   >
                     {a.title}
                   </h4>
-                  <div className="flex items-center gap-2 text-xs text-[#7F847C] mt-0.5 flex-wrap">
-                    <span className="font-semibold text-[#111111]">{a.subject}</span>
+                  <div className="flex items-center gap-2 text-xs text-muted mt-0.5 flex-wrap">
+                    <span className="font-semibold text-current">{a.subject}</span>
                     <span>•</span>
-                    <span>
-                      Due: {new Date(a.due_date).toLocaleDateString('id-ID', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
+                    <span>Due: {dueLabel}</span>
                   </div>
                 </div>
               </div>
@@ -103,3 +118,5 @@ export const AssignmentTrackerTab: React.FC<AssignmentTrackerTabProps> = ({
     </section>
   );
 };
+
+export const AssignmentTrackerTab = React.memo(AssignmentTrackerTabImpl);

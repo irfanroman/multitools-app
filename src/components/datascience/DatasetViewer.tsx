@@ -1,23 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   UploadCloud,
   FileSpreadsheet,
   BarChart3,
   ScatterChart as ScatterIcon,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-} from 'recharts';
+import { DatasetChart } from '@/components/charts/lazy';
 import { Dataset } from '@/lib/types';
 
 interface DatasetViewerProps {
@@ -33,6 +23,7 @@ interface DatasetViewerProps {
   chartType: 'bar' | 'line';
   onChartTypeChange: (type: 'bar' | 'line') => void;
   isUploading: boolean;
+  uploadError?: string | null;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onDeleteDataset: (id: string) => Promise<void>;
 }
@@ -50,8 +41,13 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
   chartType,
   onChartTypeChange,
   isUploading,
+  uploadError,
   onFileUpload,
 }) => {
+  // Only the first 10 rows are rendered; slicing here keeps the table body
+  // from rebuilding its identity on every parent render.
+  const previewRows = useMemo(() => parsedData.slice(0, 10), [parsedData]);
+
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Upload Zone & Dataset Selector */}
@@ -61,7 +57,7 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="heading-sm flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-[#111111]" />
+                <FileSpreadsheet className="w-5 h-5" />
                 <span>Upload CSV Dataset Baru</span>
               </h3>
               <span className="badge badge-dark">In-Browser EDA</span>
@@ -70,20 +66,26 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
               Upload file CSV untuk eksplorasi statistik instan, deteksi missing value, dan visualisasi interaktif.
             </p>
 
-            <label className="border-2 border-dashed border-black/10 hover:border-black/30 rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center cursor-pointer transition-colors bg-[#EDEFEB]/40 hover:bg-[#EDEFEB]/70">
-              <UploadCloud className={`w-8 h-8 text-[#111111] mb-2 ${isUploading ? 'animate-bounce' : ''}`} />
-              <span className="text-xs font-bold text-[#111111] mb-1">
+            <label className="dropzone">
+              <UploadCloud className={`w-8 h-8 mb-2 ${isUploading ? 'animate-bounce' : ''}`} />
+              <span className="text-xs font-bold mb-1">
                 {isUploading ? 'Memproses dataset...' : 'Klik atau Drag & Drop file CSV di sini'}
               </span>
-              <span className="text-[10px] text-[#7F847C]">Mendukung format .csv standar (Header otomatis terdeteksi)</span>
+              <span className="text-[10px] text-muted">Mendukung format .csv standar (Header otomatis terdeteksi)</span>
               <input
                 type="file"
-                accept=".csv"
+                accept=".csv,text/csv"
                 onChange={onFileUpload}
                 className="hidden"
                 disabled={isUploading}
               />
             </label>
+
+            {uploadError && (
+              <p role="alert" className="mt-3 text-xs font-bold text-rose-500">
+                {uploadError}
+              </p>
+            )}
           </div>
         </div>
 
@@ -100,13 +102,13 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
                   onClick={() => onSelectDataset(d)}
                   className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                     selectedDataset?.id === d.id
-                      ? 'bg-[#111111] text-white border-black shadow-xs'
-                      : 'card-muted text-[#111111] hover:bg-[#EDEFEB]'
+                      ? 'tile-selected'
+                      : 'card-muted tile-selectable'
                   }`}
                 >
                   <div className="truncate">
                     <h4 className="text-xs font-black truncate">{d.name}</h4>
-                    <span className={`text-[10px] ${selectedDataset?.id === d.id ? 'text-white/60' : 'text-[#7F847C]'}`}>
+                    <span className={`text-[10px] ${selectedDataset?.id === d.id ? 'opacity-70' : 'text-muted'}`}>
                       {d.row_count} baris • {d.column_count} kolom • {(d.file_size / 1024).toFixed(1)} KB
                     </span>
                   </div>
@@ -165,7 +167,7 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
                   type="button"
                   onClick={() => onChartTypeChange('bar')}
                   className={`p-2 rounded-xl border transition-all ${
-                    chartType === 'bar' ? 'bg-[#111111] text-[#E4FF6B] border-black' : 'btn-secondary'
+                    chartType === 'bar' ? 'btn-primary !p-2' : 'btn-secondary !p-2'
                   }`}
                   title="Bar Chart"
                 >
@@ -175,7 +177,7 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
                   type="button"
                   onClick={() => onChartTypeChange('line')}
                   className={`p-2 rounded-xl border transition-all ${
-                    chartType === 'line' ? 'bg-[#111111] text-[#E4FF6B] border-black' : 'btn-secondary'
+                    chartType === 'line' ? 'btn-primary !p-2' : 'btn-secondary !p-2'
                   }`}
                   title="Line Chart"
                 >
@@ -185,27 +187,12 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
             </div>
           </div>
 
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'bar' ? (
-                <BarChart data={parsedData.slice(0, 30)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                  <XAxis dataKey={xAxisCol} stroke="#7F847C" fontSize={10} />
-                  <YAxis stroke="#7F847C" fontSize={10} />
-                  <Tooltip />
-                  <Bar dataKey={yAxisCol} fill="#111111" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              ) : (
-                <LineChart data={parsedData.slice(0, 30)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                  <XAxis dataKey={xAxisCol} stroke="#7F847C" fontSize={10} />
-                  <YAxis stroke="#7F847C" fontSize={10} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey={yAxisCol} stroke="#111111" strokeWidth={2} dot={{ fill: '#E4FF6B', r: 4 }} />
-                </LineChart>
-              )}
-            </ResponsiveContainer>
-          </div>
+          <DatasetChart
+            data={parsedData}
+            xAxisCol={xAxisCol}
+            yAxisCol={yAxisCol}
+            chartType={chartType}
+          />
         </section>
       )}
 
@@ -215,9 +202,9 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
           <h3 className="heading-sm">
             Pratinjau Data Mentah (Menampilkan 10 baris pertama)
           </h3>
-          <div className="table-scroll rounded-2xl border border-black/5">
+          <div className="table-scroll rounded-2xl border border-subtle">
             <table className="w-full text-xs text-left">
-              <thead className="bg-[#EDEFEB] text-[#111111] uppercase font-extrabold text-[10px]">
+              <thead className="bg-subtle uppercase font-extrabold text-[10px]">
                 <tr>
                   <th className="p-3">#</th>
                   {csvColumns.map((col) => (
@@ -225,10 +212,10 @@ export const DatasetViewer: React.FC<DatasetViewerProps> = ({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/5 font-mono text-[11px]">
-                {parsedData.slice(0, 10).map((row, idx) => (
-                  <tr key={idx} className="hover:bg-[#EDEFEB]/40">
-                    <td className="p-3 font-sans font-bold text-[#7F847C]">{idx + 1}</td>
+              <tbody className="divide-y divide-subtle font-mono text-[11px]">
+                {previewRows.map((row, idx) => (
+                  <tr key={idx} className="row-hover">
+                    <td className="p-3 font-sans font-bold text-muted">{idx + 1}</td>
                     {csvColumns.map((col) => (
                       <td key={col} className="p-3">{String(row[col] ?? '')}</td>
                     ))}

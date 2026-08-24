@@ -23,8 +23,7 @@ import { ColorPicker } from '@/components/ui/ColorPicker';
 import { TransactionRow } from '@/components/finance/TransactionRow';
 import { TransactionFilters } from '@/components/finance/TransactionFilters';
 import { WalletCard } from '@/components/finance/WalletCard';
-import { ExpenseDonutChart } from '@/components/finance/ExpenseDonutChart';
-import { CashFlowChart } from '@/components/finance/CashFlowChart';
+import { ExpenseDonutChart, CashFlowChart } from '@/components/charts/lazy';
 import { EditTransactionModal } from '@/components/finance/EditTransactionModal';
 
 const ITEMS_PER_PAGE = 10;
@@ -85,39 +84,100 @@ export default function FinancePage() {
   // Reset page on filter change
   React.useEffect(() => { setCurrentPage(1); }, [filterType, filterCategory, filterWallet, filterDate, sortBy, searchQuery]);
 
-  // Calculations
-  const totalBalance = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const currentMonthTx = transactions.filter((t) => t.date.startsWith(currentMonth));
-  const totalExpense = currentMonthTx.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const totalIncome = currentMonthTx.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const financeStreak = streaks.find((s) => s.module === 'finance')?.current_streak || 0;
+  /* ------------------------------------------------------------------
+   * Month rollup — ONE pass over transactions.
+   *
+   * Previously `currentMonthTx` was rebuilt unmemoised on every render, so
+   * its identity changed each time and invalidated the `donutData` memo that
+   * depended on it. Totals then walked the list twice more, and the budget
+   * loop below walked it once per budget row (O(budgets x transactions)).
+   * ------------------------------------------------------------------ */
+  const totalBalance = useMemo(
+    () => wallets.reduce((sum, w) => sum + (w.balance || 0), 0),
+    [wallets]
+  );
+
+  const { totalExpense, totalIncome, spentByCategory } = useMemo(() => {
+    const month = new Date().toISOString().slice(0, 7);
+    const byCategory = new Map<string, number>();
+    let expense = 0;
+    let income = 0;
+
+    for (const t of transactions) {
+      if (!t.date.startsWith(month)) continue;
+      if (t.type === 'expense') {
+        expense += t.amount;
+        const key = t.category.toLowerCase();
+        byCategory.set(key, (byCategory.get(key) ?? 0) + t.amount);
+      } else if (t.type === 'income') {
+        income += t.amount;
+      }
+    }
+
+    return {
+      totalExpense: expense,
+      totalIncome: income,
+      spentByCategory: byCategory,
+    };
+  }, [transactions]);
+
+  const financeStreak = useMemo(
+    () => streaks.find((s) => s.module === 'finance')?.current_streak || 0,
+    [streaks]
+  );
 
   // Filtered & sorted transactions
   const filteredTransactions = useMemo(() => {
-    const result = transactions.filter((t) => {
-      const q = searchQuery.toLowerCase();
-      return (
-        (filterType === 'all' || t.type === filterType) &&
-        (filterCategory === 'all' || t.category === filterCategory) &&
-        (filterWallet === 'all' || t.payment_method.toLowerCase() === filterWallet.toLowerCase() || (t.type === 'transfer' && t.to_payment_method?.toLowerCase() === filterWallet.toLowerCase())) &&
-        (!filterDate || t.date === filterDate) &&
-        (t.title.toLowerCase().includes(q) || t.category.toLowerCase().includes(q) || t.payment_method.toLowerCase().includes(q) || (t.to_payment_method?.toLowerCase().includes(q) ?? false))
-      );
-    });
+    // Hoisted out of the predicate: these were recomputed for every row.
+    const q = searchQuery.trim().toLowerCase();
+    const walletKey = filterWallet.toLowerCase();
 
-    return [...result].sort((a, b) => {
-      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      switch (sortBy) {
-        case 'created_desc': return timeB !== timeA ? timeB - timeA : (b.id || '').localeCompare(a.id || '');
-        case 'date_desc': return b.date.localeCompare(a.date) || timeB - timeA;
-        case 'date_asc': return a.date.localeCompare(b.date) || timeA - timeB;
-        case 'amount_desc': return b.amount - a.amount;
-        case 'amount_asc': return a.amount - b.amount;
-        default: return 0;
+    // Decorate-sort-undecorate: parsing `created_at` inside the comparator ran
+    // O(n log n) Date constructions; this does O(n) and sorts on numbers.
+    const decorated: { t: Transaction; ts: number }[] = [];
+
+    for (const t of transactions) {
+      if (filterType !== 'all' && t.type !== filterType) continue;
+      if (filterCategory !== 'all' && t.category !== filterCategory) continue;
+      if (filterDate && t.date !== filterDate) continue;
+
+      if (filterWallet !== 'all') {
+        const fromMatch = t.payment_method.toLowerCase() === walletKey;
+        const toMatch = t.type === 'transfer' && t.to_payment_method?.toLowerCase() === walletKey;
+        if (!fromMatch && !toMatch) continue;
       }
-    });
+
+      if (q) {
+        const hit =
+          t.title.toLowerCase().includes(q) ||
+          t.category.toLowerCase().includes(q) ||
+          t.payment_method.toLowerCase().includes(q) ||
+          (t.to_payment_method?.toLowerCase().includes(q) ?? false);
+        if (!hit) continue;
+      }
+
+      decorated.push({ t, ts: t.created_at ? Date.parse(t.created_at) || 0 : 0 });
+    }
+
+    switch (sortBy) {
+      case 'created_desc':
+        decorated.sort((a, b) => b.ts - a.ts || (b.t.id || '').localeCompare(a.t.id || ''));
+        break;
+      case 'date_desc':
+        decorated.sort((a, b) => b.t.date.localeCompare(a.t.date) || b.ts - a.ts);
+        break;
+      case 'date_asc':
+        decorated.sort((a, b) => a.t.date.localeCompare(b.t.date) || a.ts - b.ts);
+        break;
+      case 'amount_desc':
+        decorated.sort((a, b) => b.t.amount - a.t.amount);
+        break;
+      case 'amount_asc':
+        decorated.sort((a, b) => a.t.amount - b.t.amount);
+        break;
+    }
+
+    return decorated.map((d) => d.t);
   }, [transactions, filterType, filterCategory, filterWallet, filterDate, searchQuery, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
@@ -128,23 +188,34 @@ export default function FinancePage() {
 
   // Chart data
   const donutData = useMemo(() => {
-    const map: Record<string, number> = {};
-    currentMonthTx.filter((t) => t.type === 'expense').forEach((t) => { map[t.category] = (map[t.category] || 0) + t.amount; });
-    return Object.entries(map).map(([name, value]) => {
-      const foundCat = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
-      return { name, value, color: foundCat?.color || CATEGORY_COLORS[name.toLowerCase()] || '#7F847C' };
-    });
-  }, [currentMonthTx, categories]);
+    // Index categories once instead of a linear find() per slice.
+    const colorByName = new Map(
+      categories.map((c) => [c.name.toLowerCase(), c.color] as const)
+    );
+    return Array.from(spentByCategory, ([name, value]) => ({
+      name,
+      value,
+      color: colorByName.get(name) || CATEGORY_COLORS[name] || '#7F847C',
+    }));
+  }, [spentByCategory, categories]);
 
   const areaData = useMemo(() => {
-    const daysMap: Record<string, { date: string; income: number; expense: number }> = {};
-    [...transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach((t) => {
-      const day = t.date.slice(5);
-      if (!daysMap[day]) daysMap[day] = { date: day, income: 0, expense: 0 };
-      if (t.type === 'income') daysMap[day].income += t.amount;
-      else daysMap[day].expense += t.amount;
-    });
-    return Object.values(daysMap);
+    // Keyed on the full date: the old MM-DD key merged the same day across
+    // different years into one bucket.
+    const byDay = new Map<string, { key: string; date: string; income: number; expense: number }>();
+
+    for (const t of transactions) {
+      let bucket = byDay.get(t.date);
+      if (!bucket) {
+        bucket = { key: t.date, date: t.date.slice(5), income: 0, expense: 0 };
+        byDay.set(t.date, bucket);
+      }
+      if (t.type === 'income') bucket.income += t.amount;
+      else bucket.expense += t.amount;
+    }
+
+    // Sort the buckets (<= 365) rather than the whole transaction list.
+    return Array.from(byDay.values()).sort((a, b) => a.key.localeCompare(b.key));
   }, [transactions]);
 
   const spendingInsight = useMemo(() => {
@@ -239,10 +310,15 @@ export default function FinancePage() {
           </div>
 
           <div className="space-y-3 mb-6">
-            {budgets.map((b) => {
-              const spent = b.spent || currentMonthTx.filter((t) => t.type === 'expense' && t.category.toLowerCase() === b.category.toLowerCase()).reduce((sum, t) => sum + t.amount, 0);
-              return <CapsuleProgress key={b.id} label={b.category} spent={spent} limit={b.limit_amount} orientation="horizontal" />;
-            })}
+            {budgets.map((b) => (
+              <CapsuleProgress
+                key={b.id}
+                label={b.category}
+                spent={b.spent ?? spentByCategory.get(b.category.toLowerCase()) ?? 0}
+                limit={b.limit_amount}
+                orientation="horizontal"
+              />
+            ))}
           </div>
 
           <CashFlowChart data={areaData} />

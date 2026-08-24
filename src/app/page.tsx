@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Wallet,
@@ -36,30 +36,71 @@ export default function OverviewPage() {
   const [editCategory, setEditCategory] = useState('makan');
   const [editLimit, setEditLimit] = useState('2000000');
 
-  const totalBalance = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
-  
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const currentMonthTransactions = transactions.filter((t) => t.date.startsWith(currentMonth));
-  const totalExpenseThisMonth = currentMonthTransactions
-    .filter((t) => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalIncomeThisMonth = currentMonthTransactions
-    .filter((t) => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const totalBalance = useMemo(
+    () => wallets.reduce((sum, w) => sum + (w.balance || 0), 0),
+    [wallets]
+  );
 
-  const totalBudgetLimit = budgets.reduce((sum, b) => sum + b.limit_amount, 0);
-  const totalBudgetSpent = budgets.reduce((sum, b) => {
-    const spentForCat = currentMonthTransactions
-      .filter((t) => t.type === 'expense' && t.category.toLowerCase() === b.category.toLowerCase())
-      .reduce((s, t) => s + t.amount, 0);
-    return sum + (b.spent || spentForCat);
-  }, 0);
+  /* Single pass over transactions builds the month totals AND the
+     per-category spend index.
 
-  const pendingAssignments = assignments.filter((a) => a.status !== 'completed');
+     The old code scanned the ledger three times up front, then once more per
+     budget row inside a reduce (O(budgets x transactions)), then AGAIN inside
+     the capsule render loop below — five-plus full scans on every render,
+     none of them memoised. */
+  const { totalExpenseThisMonth, totalIncomeThisMonth, spentByCategory } = useMemo(() => {
+    const month = new Date().toISOString().slice(0, 7);
+    const byCategory = new Map<string, number>();
+    let expense = 0;
+    let income = 0;
+
+    for (const t of transactions) {
+      if (!t.date.startsWith(month)) continue;
+      if (t.type === 'expense') {
+        expense += t.amount;
+        const key = t.category.toLowerCase();
+        byCategory.set(key, (byCategory.get(key) ?? 0) + t.amount);
+      } else if (t.type === 'income') {
+        income += t.amount;
+      }
+    }
+
+    return {
+      totalExpenseThisMonth: expense,
+      totalIncomeThisMonth: income,
+      spentByCategory: byCategory,
+    };
+  }, [transactions]);
+
+  const { totalBudgetLimit, totalBudgetSpent } = useMemo(() => {
+    let limit = 0;
+    let spent = 0;
+    for (const b of budgets) {
+      limit += b.limit_amount;
+      spent += b.spent ?? spentByCategory.get(b.category.toLowerCase()) ?? 0;
+    }
+    return { totalBudgetLimit: limit, totalBudgetSpent: spent };
+  }, [budgets, spentByCategory]);
+
+  const pendingAssignments = useMemo(
+    () => assignments.filter((a) => a.status !== 'completed'),
+    [assignments]
+  );
+
+  const overallStreak = useMemo(
+    () => streaks.find((s) => s.module === 'overall')?.current_streak || 0,
+    [streaks]
+  );
+
   const flashcardsDueToday = flashcards.length;
   const latestExperiment = experiments[0];
   const todayJournal = journalEntries[0];
-  const overallStreak = streaks.find((s) => s.module === 'overall')?.current_streak || 0;
+
+  // Object.entries() was called three times per render on the same object.
+  const metricLabel = useMemo(() => {
+    const first = latestExperiment ? Object.entries(latestExperiment.metrics)[0] : undefined;
+    return first ? `${first[0]}: ${first[1]}` : '0.942';
+  }, [latestExperiment]);
 
   const handleSaveBudget = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,11 +166,11 @@ export default function OverviewPage() {
           subtitle={`${flashcardsDueToday} Flashcard siap di-review hari ini`}
           badgeText={`${overallStreak} Hari Streak`}
           badgeType="neutral"
-          icon={<GraduationCap className="w-5 h-5 text-[#111111]" />}
+          icon={<GraduationCap className="w-5 h-5" />}
           actionButton={
             <Link
               href="/study"
-              className="inline-flex items-center gap-1 text-xs font-bold text-[#111111] hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-bold hover:underline"
             >
               Mulai Sesi Belajar & Flashcard <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -168,28 +209,21 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 py-3 border-y border-black/5">
-            {budgets.slice(0, 6).map((b) => {
-              const spent =
-                b.spent ||
-                currentMonthTransactions
-                  .filter((t) => t.type === 'expense' && t.category.toLowerCase() === b.category.toLowerCase())
-                  .reduce((sum, t) => sum + t.amount, 0);
-              return (
-                <CapsuleProgress
-                  key={b.id}
-                  label={b.category}
-                  spent={spent}
-                  limit={b.limit_amount}
-                  orientation="vertical"
-                />
-              );
-            })}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 py-3 border-y border-subtle">
+            {budgets.slice(0, 6).map((b) => (
+              <CapsuleProgress
+                key={b.id}
+                label={b.category}
+                spent={b.spent ?? spentByCategory.get(b.category.toLowerCase()) ?? 0}
+                limit={b.limit_amount}
+                orientation="vertical"
+              />
+            ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-[#7F847C] flex-wrap gap-2">
+          <div className="mt-4 flex items-center justify-between text-xs text-muted flex-wrap gap-2">
             <span>Total Limit: Rp {totalBudgetLimit.toLocaleString('id-ID')}</span>
-            <Link href="/finance" className="font-bold text-[#111111] hover:underline">
+            <Link href="/finance" className="font-bold hover:underline">
               Kelola Pengeluaran & Transaksi →
             </Link>
           </div>
@@ -212,37 +246,35 @@ export default function OverviewPage() {
             {latestExperiment ? (
               <div className="card-muted space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#111111]">{latestExperiment.title}</span>
+                  <span className="text-xs font-bold">{latestExperiment.title}</span>
                   <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
                     Active
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <span className="text-[10px] text-[#7F847C] block">Model</span>
-                    <span className="font-semibold text-[#111111]">{latestExperiment.model_type}</span>
+                    <span className="text-[10px] text-muted block">Model</span>
+                    <span className="font-semibold">{latestExperiment.model_type}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-[#7F847C] block">F1-Score / Metric</span>
-                    <span className="font-semibold text-[#111111]">
-                      {Object.entries(latestExperiment.metrics)[0]
-                        ? `${Object.entries(latestExperiment.metrics)[0][0]}: ${Object.entries(latestExperiment.metrics)[0][1]}`
-                        : '0.942'}
+                    <span className="text-[10px] text-muted block">F1-Score / Metric</span>
+                    <span className="font-semibold">
+                      {metricLabel}
                     </span>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="p-6 rounded-2xl bg-[#EDEFEB]/40 text-center section-subtitle">
+              <div className="p-6 rounded-2xl bg-subtle-soft text-center section-subtitle">
                 Belum ada eksperimen ML tercatat.
               </div>
             )}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between">
+          <div className="mt-4 pt-3 border-t border-subtle flex items-center justify-between">
             <Link
               href="/datascience"
-              className="text-xs font-extrabold text-[#111111] hover:underline flex items-center gap-1"
+              className="text-xs font-extrabold hover:underline flex items-center gap-1"
             >
               Buka Data Science Corner <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -260,7 +292,7 @@ export default function OverviewPage() {
                 <GraduationCap className="w-5 h-5" />
                 <span>Assignment Board & Deadlines</span>
               </h2>
-              <span className="text-xs font-bold text-[#7F847C]">
+              <span className="text-xs font-bold text-muted">
                 {pendingAssignments.length} Belum Selesai
               </span>
             </div>
@@ -269,11 +301,11 @@ export default function OverviewPage() {
               {pendingAssignments.slice(0, 3).map((a) => (
                 <div
                   key={a.id}
-                  className="p-3.5 rounded-2xl bg-[#EDEFEB]/50 border border-black/5 flex items-center justify-between hover:bg-[#EDEFEB] transition-colors"
+                  className="p-3.5 rounded-2xl card-muted tile-selectable flex items-center justify-between"
                 >
                   <div>
-                    <h4 className="text-xs font-bold text-[#111111]">{a.title}</h4>
-                    <span className="text-[10px] text-[#7F847C]">{a.subject} • Due: {a.due_date}</span>
+                    <h4 className="text-xs font-bold">{a.title}</h4>
+                    <span className="text-[10px] text-muted">{a.subject} • Due: {a.due_date}</span>
                   </div>
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -297,8 +329,8 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between">
-            <Link href="/study" className="text-xs font-extrabold text-[#111111] hover:underline flex items-center gap-1">
+          <div className="mt-4 pt-3 border-t border-subtle flex items-center justify-between">
+            <Link href="/study" className="text-xs font-extrabold hover:underline flex items-center gap-1">
               Buka Note Summarizer & Flashcards <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -325,20 +357,20 @@ export default function OverviewPage() {
                     {todayJournal.mood_tag}
                   </span>
                 </div>
-                <p className="text-xs text-[#111111]/80 leading-relaxed italic">
+                <p className="text-xs text-secondary leading-relaxed italic">
                   "{todayJournal.content}"
                 </p>
-                <div className="text-[10px] text-[#7F847C]">{todayJournal.date}</div>
+                <div className="text-[10px] text-muted">{todayJournal.date}</div>
               </div>
             ) : (
-              <div className="p-6 rounded-2xl bg-[#EDEFEB]/40 text-center section-subtitle">
+              <div className="p-6 rounded-2xl bg-subtle-soft text-center section-subtitle">
                 Belum ada refleksi yang dicatat hari ini.
               </div>
             )}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between">
-            <Link href="/journal" className="text-xs font-extrabold text-[#111111] hover:underline flex items-center gap-1">
+          <div className="mt-4 pt-3 border-t border-subtle flex items-center justify-between">
+            <Link href="/journal" className="text-xs font-extrabold hover:underline flex items-center gap-1">
               Catat Refleksi & Mood Harian <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -404,7 +436,7 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+          <div className="flex justify-end gap-2 pt-2 border-t border-subtle">
             <button
               type="button"
               onClick={() => setIsBudgetModalOpen(false)}

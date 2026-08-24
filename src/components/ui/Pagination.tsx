@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PaginationProps {
@@ -11,19 +11,19 @@ interface PaginationProps {
   onPageChange: (page: number) => void;
 }
 
-export const Pagination: React.FC<PaginationProps> = ({
+const PaginationImpl: React.FC<PaginationProps> = ({
   currentPage,
   totalPages,
   totalItems,
   itemsPerPage,
   onPageChange,
 }) => {
-  if (totalPages <= 1) return null;
-
   const startItem = (currentPage - 1) * itemsPerPage + 1;
   const endItem = Math.min(currentPage * itemsPerPage, totalItems);
 
-  const getVisiblePages = (): (number | '...')[] => {
+  // Rebuilt on every render (including every keystroke in the filter bar)
+  // even though it only depends on two numbers.
+  const visiblePages = useMemo((): (number | '...')[] => {
     if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
 
     const pages: (number | '...')[] = [1];
@@ -36,14 +36,17 @@ export const Pagination: React.FC<PaginationProps> = ({
     if (currentPage < totalPages - 2) pages.push('...');
     pages.push(totalPages);
     return pages;
-  };
+  }, [currentPage, totalPages]);
+
+  // Early return must come AFTER every hook call.
+  if (totalPages <= 1) return null;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 mt-3 border-t border-black/5">
-      <span className="text-xs font-medium text-[#7F847C]">
-        Menampilkan <b className="text-[#111111]">{startItem}</b> –{' '}
-        <b className="text-[#111111]">{endItem}</b> dari{' '}
-        <b className="text-[#111111]">{totalItems}</b> item
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 mt-3 border-t border-subtle">
+      <span className="text-xs font-medium text-muted">
+        Menampilkan <b className="text-current">{startItem}</b> –{' '}
+        <b className="text-current">{endItem}</b> dari{' '}
+        <b className="text-current">{totalItems}</b> item
       </span>
 
       <div className="flex items-center gap-1.5">
@@ -58,9 +61,9 @@ export const Pagination: React.FC<PaginationProps> = ({
         </button>
 
         <div className="flex items-center gap-1">
-          {getVisiblePages().map((page, idx) =>
+          {visiblePages.map((page, idx) =>
             page === '...' ? (
-              <span key={`dots-${idx}`} className="px-1 text-xs text-[#7F847C]">…</span>
+              <span key={`dots-${idx}`} className="px-1 text-xs text-muted">…</span>
             ) : (
               <button
                 key={page}
@@ -87,3 +90,5 @@ export const Pagination: React.FC<PaginationProps> = ({
     </div>
   );
 };
+
+export const Pagination = React.memo(PaginationImpl);

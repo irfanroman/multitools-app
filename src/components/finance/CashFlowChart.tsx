@@ -10,6 +10,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
+import { useChartTheme } from '@/lib/useChartTheme';
 
 interface AreaDataItem {
   date: string;
@@ -21,32 +22,56 @@ interface CashFlowChartProps {
   data: AreaDataItem[];
 }
 
-export const CashFlowChart: React.FC<CashFlowChartProps> = ({ data }) => {
+const fmtIDR = (val: unknown) => `Rp ${Number(val ?? 0).toLocaleString('id-ID')}`;
+const fmtAxis = (v: number) => `${Math.round(v / 1000)}k`;
+
+const CashFlowChartImpl: React.FC<CashFlowChartProps> = ({ data }) => {
+  const t = useChartTheme();
+
   return (
-    <div className="pt-4 border-t border-black/5">
-      <h4 className="text-xs font-extrabold text-[#111111] mb-2 uppercase tracking-wider">
+    <div className="pt-4 border-t border-subtle">
+      <h4 className="text-xs font-extrabold mb-2 uppercase tracking-wider">
         Tren Arus Kas (Income vs Expense)
       </h4>
       <div className="h-44 w-full">
         {data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data}>
+            <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
               <defs>
                 <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                  <stop offset="5%" stopColor={t.income} stopOpacity={0.4} />
+                  <stop offset="95%" stopColor={t.income} stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#E4FF6B" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#E4FF6B" stopOpacity={0} />
+                  <stop offset="5%" stopColor={t.accent} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={t.accent} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-              <XAxis dataKey="date" stroke="#7F847C" fontSize={10} />
-              <YAxis stroke="#7F847C" fontSize={10} tickFormatter={(v) => `${v / 1000}k`} />
-              <Tooltip formatter={(val: any) => [`Rp ${Number(val).toLocaleString('id-ID')}`]} />
-              <Area type="monotone" dataKey="income" stroke="#10B981" strokeWidth={2} fillOpacity={1} fill="url(#incomeGrad)" name="Pemasukan" />
-              <Area type="monotone" dataKey="expense" stroke="#111111" strokeWidth={2} fillOpacity={1} fill="url(#expenseGrad)" name="Pengeluaran" />
+              <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
+              <XAxis dataKey="date" stroke={t.axis} fontSize={10} tickLine={false} />
+              <YAxis stroke={t.axis} fontSize={10} tickLine={false} tickFormatter={fmtAxis} />
+              <Tooltip formatter={fmtIDR} {...t.tooltip} />
+              <Area
+                type="monotone"
+                dataKey="income"
+                stroke={t.income}
+                strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#incomeGrad)"
+                name="Pemasukan"
+                isAnimationActive={false}
+              />
+              {/* Was hard-coded #111111 — a black line on a #16181D card. */}
+              <Area
+                type="monotone"
+                dataKey="expense"
+                stroke={t.expense}
+                strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#expenseGrad)"
+                name="Pengeluaran"
+                isAnimationActive={false}
+              />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -58,3 +83,5 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ data }) => {
     </div>
   );
 };
+
+export const CashFlowChart = React.memo(CashFlowChartImpl);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Clock,
   BookOpen,
@@ -17,6 +17,15 @@ import { NoteSummarizerTab } from '@/components/study/NoteSummarizerTab';
 import { FlashcardsTab } from '@/components/study/FlashcardsTab';
 import { PomodoroTab } from '@/components/study/PomodoroTab';
 import { AssignmentTrackerTab } from '@/components/study/AssignmentTrackerTab';
+
+type SubTab = 'summarizer' | 'flashcards' | 'pomodoro' | 'assignments';
+
+const SUB_TABS: { key: SubTab; label: string }[] = [
+  { key: 'summarizer', label: 'Note Summarizer' },
+  { key: 'flashcards', label: 'Flashcard Spaced Repetition' },
+  { key: 'pomodoro', label: 'Pomodoro Focus Timer' },
+  { key: 'assignments', label: 'Assignment Tracker' },
+];
 
 export default function StudyPage() {
   const {
@@ -37,13 +46,26 @@ export default function StudyPage() {
     streaks,
   } = useDashboard();
 
-  const [activeSubTab, setActiveSubTab] = useState<'summarizer' | 'flashcards' | 'pomodoro' | 'assignments'>('summarizer');
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>('summarizer');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | null>(notes[0] || null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  const studyStreak = streaks.find((s) => s.module === 'study')?.current_streak || 0;
+  const studyStreak = useMemo(
+    () => streaks.find((s) => s.module === 'study')?.current_streak || 0,
+    [streaks]
+  );
 
-  const handleConvertNoteToFlashcards = async (note: Note) => {
+  const pendingAssignments = useMemo(
+    () => assignments.reduce((n, a) => (a.status !== 'completed' ? n + 1 : n), 0),
+    [assignments]
+  );
+
+  // Stable identity so the tab panels below are not forced to re-render.
+  const openQuickAdd = useCallback(() => setIsQuickAddOpen(true), []);
+  const closeQuickAdd = useCallback(() => setIsQuickAddOpen(false), []);
+
+  const handleConvertNoteToFlashcards = useCallback(async (note: Note) => {
     if (!note.key_points || note.key_points.length === 0) {
       await addFlashcard({
         note_id: note.id,
@@ -51,29 +73,35 @@ export default function StudyPage() {
         question: `Jelaskan ringkasan materi: ${note.title}`,
         answer: note.summary || note.raw_content.slice(0, 200),
         difficulty: 1,
-        next_review_date: new Date().toISOString().split('T')[0],
+        next_review_date: new Date().toISOString().slice(0, 10),
         repetition_count: 0,
       });
       confetti({ particleCount: 60, spread: 50 });
-      alert(`Berhasil membuat flashcard dari "${note.title}"!`);
+      setToast(`Berhasil membuat flashcard dari "${note.title}".`);
       return;
     }
 
-    for (let i = 0; i < Math.min(note.key_points.length, 3); i++) {
-      const point = note.key_points[i];
-      await addFlashcard({
-        note_id: note.id,
-        subject: note.subject,
-        question: `Jelaskan konsep: ${note.title} (Poin ${i + 1})`,
-        answer: point,
-        difficulty: 2,
-        next_review_date: new Date().toISOString().split('T')[0],
-        repetition_count: 0,
-      });
-    }
+    const count = Math.min(note.key_points.length, 3);
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Fire the inserts together instead of awaiting each round-trip in turn.
+    await Promise.all(
+      note.key_points.slice(0, count).map((point, i) =>
+        addFlashcard({
+          note_id: note.id,
+          subject: note.subject,
+          question: `Jelaskan konsep: ${note.title} (Poin ${i + 1})`,
+          answer: point,
+          difficulty: 2,
+          next_review_date: today,
+          repetition_count: 0,
+        })
+      )
+    );
+
     confetti({ particleCount: 70, spread: 60 });
-    alert(`Berhasil membuat ${Math.min(note.key_points.length, 3)} flashcard dari materi "${note.title}"!`);
-  };
+    setToast(`Berhasil membuat ${count} flashcard dari materi "${note.title}".`);
+  }, [addFlashcard]);
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in">
@@ -124,15 +152,15 @@ export default function StudyPage() {
         <StatCard
           variant="white"
           title="Assignments & Deadlines"
-          value={`${assignments.filter((a) => a.status !== 'completed').length} Tugas Pending`}
+          value={`${pendingAssignments} Tugas Pending`}
           subtitle={`Total ${assignments.length} tugas terdaftar`}
           badgeText="Urgent Track"
           badgeType="neutral"
-          icon={<Calendar className="w-5 h-5 text-[#111111]" />}
+          icon={<Calendar className="w-5 h-5" />}
           actionButton={
             <button
               onClick={() => setActiveSubTab('assignments')}
-              className="text-xs font-bold text-[#111111] hover:underline flex items-center gap-1"
+              className="text-xs font-bold hover:underline flex items-center gap-1"
             >
               Buka Assignment Board →
             </button>
@@ -141,26 +169,36 @@ export default function StudyPage() {
       </section>
 
       {/* Sub-Navigation Tabs */}
-      <div className="flex gap-2 p-1.5 bg-white rounded-2xl border border-black/5 overflow-x-auto shadow-xs">
-        {[
-          { key: 'summarizer', label: 'Note Summarizer' },
-          { key: 'flashcards', label: 'Flashcard Spaced Repetition' },
-          { key: 'pomodoro', label: 'Pomodoro Focus Timer' },
-          { key: 'assignments', label: 'Assignment Tracker' },
-        ].map((tab) => (
+      <div className="tab-strip" role="tablist" aria-label="Study tools">
+        {SUB_TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveSubTab(tab.key as any)}
-            className={`flex-1 min-w-[150px] sm:min-w-[170px] py-2.5 px-3 sm:px-4 rounded-xl text-xs font-extrabold transition-all text-center ${
-              activeSubTab === tab.key
-                ? 'bg-[#111111] text-[#E4FF6B] shadow-md shadow-black/10'
-                : 'text-[#7F847C] hover:text-[#111111] hover:bg-[#EDEFEB]'
-            }`}
+            type="button"
+            role="tab"
+            aria-selected={activeSubTab === tab.key}
+            onClick={() => setActiveSubTab(tab.key)}
+            className={`tab-item ${activeSubTab === tab.key ? 'tab-item-active' : ''}`}
           >
-            <div>{tab.label}</div>
+            {tab.label}
           </button>
         ))}
       </div>
+
+      {toast && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 p-3 rounded-2xl card-muted"
+        >
+          <span className="text-xs font-bold">{toast}</span>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-[10px] font-black text-muted hover:text-current shrink-0"
+          >
+            TUTUP
+          </button>
+        </div>
+      )}
 
       {/* Tab Panels */}
       {activeSubTab === 'summarizer' && (
@@ -181,7 +219,7 @@ export default function StudyPage() {
           onReviewFlashcard={reviewFlashcard}
           onUpdateFlashcard={updateFlashcard}
           onDeleteFlashcard={deleteFlashcard}
-          onOpenQuickAdd={() => setIsQuickAddOpen(true)}
+          onOpenQuickAdd={openQuickAdd}
         />
       )}
 
@@ -197,7 +235,7 @@ export default function StudyPage() {
           assignments={assignments}
           onToggleAssignment={toggleAssignment}
           onDeleteAssignment={deleteAssignment}
-          onOpenQuickAdd={() => setIsQuickAddOpen(true)}
+          onOpenQuickAdd={openQuickAdd}
         />
       )}
 
@@ -205,7 +243,7 @@ export default function StudyPage() {
       {isQuickAddOpen && (
         <QuickAddModal
           isOpen={isQuickAddOpen}
-          onClose={() => setIsQuickAddOpen(false)}
+          onClose={closeQuickAdd}
           defaultTab="note"
         />
       )}

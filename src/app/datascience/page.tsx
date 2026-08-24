@@ -41,6 +41,7 @@ export default function DataSciencePage() {
   const [yAxisCol, setYAxisCol] = useState<string>('G3');
   const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // New Experiment Modal state
   const [isExpModalOpen, setIsExpModalOpen] = useState(false);
@@ -60,18 +61,82 @@ export default function DataSciencePage() {
   const [snipTags, setSnipTags] = useState('pandas, eda');
   const [snipDesc, setSnipDesc] = useState('');
 
+  /**
+   * Profile every column in a SINGLE pass over the rows.
+   *
+   * The previous version was O(columns x rows) with three intermediate arrays
+   * per column, and used `Math.min(...values)` / `Math.max(...values)`. Spread
+   * pushes every element onto the call stack, so any CSV past roughly 100k
+   * numeric rows threw `RangeError: Maximum call stack size exceeded`.
+   */
+  const profileColumns = (rows: Record<string, unknown>[], cols: string[]) => {
+    const stats = cols.map((name) => ({
+      name,
+      present: 0,
+      numericCount: 0,
+      sum: 0,
+      min: Number.POSITIVE_INFINITY,
+      max: Number.NEGATIVE_INFINITY,
+      unique: new Set<unknown>(),
+    }));
+
+    for (const row of rows) {
+      for (let i = 0; i < cols.length; i++) {
+        const v = row[cols[i]];
+        if (v === null || v === undefined || v === '') continue;
+
+        const st = stats[i];
+        st.present++;
+        // Cardinality is only needed to report a count; cap the Set so a
+        // high-cardinality column cannot retain the whole file in memory.
+        if (st.unique.size < 10_000) st.unique.add(v);
+
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          st.numericCount++;
+          st.sum += v;
+          if (v < st.min) st.min = v;
+          if (v > st.max) st.max = v;
+        }
+      }
+    }
+
+    return stats.map((st) => {
+      const isNum = st.present > 0 && st.numericCount / st.present > 0.8;
+      return {
+        name: st.name,
+        type: isNum ? 'numeric' : 'categorical',
+        missing: rows.length - st.present,
+        unique: st.unique.size,
+        mean: isNum && st.numericCount > 0
+          ? Number((st.sum / st.numericCount).toFixed(2))
+          : undefined,
+        min: isNum && st.numericCount > 0 ? st.min : undefined,
+        max: isNum && st.numericCount > 0 ? st.max : undefined,
+      };
+    });
+  };
+
   // Handle CSV file upload & parsing
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
-    Papa.parse(file, {
+    setUploadError(null);
+
+    Papa.parse<Record<string, unknown>>(file, {
       header: true,
       dynamicTyping: true,
       skipEmptyLines: true,
+      // Parse off the main thread: a multi-MB CSV previously froze the tab.
+      worker: true,
+      error: (err) => {
+        console.warn('CSV parse error:', err);
+        setUploadError('File CSV gagal dibaca. Pastikan formatnya valid.');
+        setIsUploading(false);
+      },
       complete: async (results) => {
-        const rows = results.data as any[];
+        const rows = results.data;
         if (rows.length > 0) {
           const cols = Object.keys(rows[0]);
           setCsvColumns(cols);
@@ -79,24 +144,7 @@ export default function DataSciencePage() {
           setXAxisCol(cols[0] || '');
           setYAxisCol(cols[1] || cols[0] || '');
 
-          const colInfo = cols.map((col) => {
-            const values = rows.map((r) => r[col]).filter((v) => v !== null && v !== undefined);
-            const isNum = typeof values[0] === 'number';
-            const numVals = isNum ? (values as number[]) : [];
-            const mean = isNum && numVals.length > 0 ? numVals.reduce((a, b) => a + b, 0) / numVals.length : undefined;
-            const min = isNum && numVals.length > 0 ? Math.min(...numVals) : undefined;
-            const max = isNum && numVals.length > 0 ? Math.max(...numVals) : undefined;
-
-            return {
-              name: col,
-              type: isNum ? 'numeric' : 'categorical',
-              missing: rows.length - values.length,
-              unique: new Set(values).size,
-              mean: mean ? Number(mean.toFixed(2)) : undefined,
-              min,
-              max,
-            };
-          });
+          const colInfo = profileColumns(rows, cols);
 
           await addDataset({
             name: file.name.replace(/\.[^/.]+$/, ''),
@@ -115,6 +163,8 @@ export default function DataSciencePage() {
           confetti({ particleCount: 50, spread: 50 });
         }
         setIsUploading(false);
+        // Let the input fire again for the same filename.
+        e.target.value = '';
       },
     });
   };
@@ -227,7 +277,7 @@ export default function DataSciencePage() {
       </section>
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex gap-2 p-1.5 bg-white rounded-2xl border border-black/5 overflow-x-auto shadow-xs">
+      <div className="flex gap-2 p-1.5 bg-white rounded-2xl border border-subtle overflow-x-auto shadow-xs">
         {[
           { key: 'playground', label: 'CSV Playground & EDA' },
           { key: 'experiments', label: 'ML Experiment Tracker' },
@@ -238,8 +288,8 @@ export default function DataSciencePage() {
             onClick={() => setActiveTab(tab.key as any)}
             className={`flex-1 min-w-[160px] py-2.5 px-4 rounded-xl text-xs font-extrabold transition-all text-center ${
               activeTab === tab.key
-                ? 'bg-[#111111] text-[#E4FF6B] shadow-md shadow-black/10'
-                : 'text-[#7F847C] hover:text-[#111111] hover:bg-[#EDEFEB]'
+                ? 'tab-item-active'
+                : ''
             }`}
           >
             {tab.label}
@@ -268,6 +318,7 @@ export default function DataSciencePage() {
           chartType={chartType}
           onChartTypeChange={setChartType}
           isUploading={isUploading}
+          uploadError={uploadError}
           onFileUpload={handleFileUpload}
           onDeleteDataset={deleteDataset}
         />
@@ -357,7 +408,7 @@ export default function DataSciencePage() {
             <label className="label-field">Catatan (Hyperparameters / Insights)</label>
             <textarea rows={3} placeholder="max_depth=10, n_estimators=100..." value={expNotes} onChange={(e) => setExpNotes(e.target.value)} className="input-field" />
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+          <div className="flex justify-end gap-2 pt-2 border-t border-subtle">
             <button type="button" onClick={() => setIsExpModalOpen(false)} className="btn-secondary">Batal</button>
             <button type="submit" className="btn-primary">Simpan Run</button>
           </div>
@@ -398,7 +449,7 @@ export default function DataSciencePage() {
             <label className="label-field">Code Body</label>
             <textarea required rows={6} placeholder="def remove_outliers(df, col):..." value={snipCode} onChange={(e) => setSnipCode(e.target.value)} className="input-field font-mono text-xs" />
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+          <div className="flex justify-end gap-2 pt-2 border-t border-subtle">
             <button type="button" onClick={() => setIsSnipModalOpen(false)} className="btn-secondary">Batal</button>
             <button type="submit" className="btn-primary">Simpan Snippet</button>
           </div>

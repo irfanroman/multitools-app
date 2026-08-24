@@ -1,6 +1,13 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 type Theme = 'light' | 'dark';
 
@@ -12,53 +19,67 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('light');
-  const [mounted, setMounted] = useState(false);
+const STORAGE_KEY = 'dashboard_theme';
 
-  useEffect(() => {
-    try {
-      const savedTheme = localStorage.getItem('dashboard_theme') as Theme | null;
-      if (savedTheme === 'dark' || savedTheme === 'light') {
-        setThemeState(savedTheme);
-        if (savedTheme === 'dark') {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-        }
-      } else {
-        // Default always Light mode
-        setThemeState('light');
-        document.documentElement.classList.remove('dark');
+/**
+ * Reads the class the pre-hydration bootstrap script already put on <html>,
+ * so the first client render agrees with the painted DOM and React does not
+ * have to re-render the tree to correct it.
+ */
+function readInitialTheme(): Theme {
+  if (typeof document === 'undefined') return 'light';
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+}
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>(readInitialTheme);
+
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState((current) => {
+      if (current === next) return current;
+      document.documentElement.classList.toggle('dark', next === 'dark');
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        /* private mode / quota — theme still applies for this session */
       }
-    } catch (e) {
-      console.warn('Theme init error:', e);
-    }
-    setMounted(true);
+      return next;
+    });
   }, []);
 
-  const setTheme = (t: Theme) => {
-    setThemeState(t);
-    try {
-      localStorage.setItem('dashboard_theme', t);
-      if (t === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
+  const toggleTheme = useCallback(() => {
+    setThemeState((current) => {
+      const next: Theme = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.classList.toggle('dark', next === 'dark');
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        /* ignore */
       }
-    } catch (e) {}
-  };
+      return next;
+    });
+  }, []);
 
-  const toggleTheme = () => {
-    const nextTheme: Theme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-  };
+  // Keep multiple tabs in sync without polling.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY || !e.newValue) return;
+      if (e.newValue === 'dark' || e.newValue === 'light') {
+        setThemeState(e.newValue);
+        document.documentElement.classList.toggle('dark', e.newValue === 'dark');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
+  // Stable identity: consumers only re-render when `theme` actually flips.
+  const value = useMemo<ThemeContextType>(
+    () => ({ theme, toggleTheme, setTheme }),
+    [theme, toggleTheme, setTheme]
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

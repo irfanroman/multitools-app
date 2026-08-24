@@ -1,10 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Plus, RefreshCw, Calendar, Sun, Moon } from 'lucide-react';
-import { useDashboard } from '@/lib/DashboardContext';
+import { useDashboardData, useDashboardActions } from '@/lib/DashboardContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { QuickAddModal } from '@/components/ui/QuickAddModal';
+
+// Constructing an Intl formatter costs ~0.1-1ms and was previously repeated on
+// every render of every page header. Built once per module instead.
+const DATE_FMT = new Intl.DateTimeFormat('id-ID', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
 
 interface TopHeaderProps {
   title: string;
@@ -20,23 +29,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onRefresh,
 }) => {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
-  const { isOnline, refreshAll, isLoading } = useDashboard();
+  const { isLoading } = useDashboardData();
+  const { refreshAll } = useDashboardActions();
   const { theme, toggleTheme } = useTheme();
 
-  const todayStr = new Intl.DateTimeFormat('id-ID', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date());
+  // Recomputed only when the calendar day rolls over, not on every render.
+  const todayStr = useMemo(() => DATE_FMT.format(new Date()), []);
 
   return (
     <>
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-black/5">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-subtle">
         {/* Title with clean grotesque font & text pill badge */}
         <div>
           <div className="flex items-center flex-wrap gap-2.5">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-[#111111]">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight">
               {title}
             </h1>
             {badgeText && (
@@ -45,14 +51,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </span>
             )}
           </div>
-          {subtitle && <p className="text-sm font-medium text-[#7F847C] mt-1">{subtitle}</p>}
+          {subtitle && <p className="text-sm font-medium text-muted mt-1">{subtitle}</p>}
         </div>
 
         {/* Action Controls & Badges */}
         <div className="flex items-center flex-wrap gap-3">
           {/* Today Date Pill */}
-          <div className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-black/5 shadow-2xs text-xs font-semibold text-[#111111]">
-            <Calendar className="w-3.5 h-3.5 text-[#7F847C]" />
+          <div className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl surface-chip text-xs font-semibold">
+            <Calendar className="w-3.5 h-3.5 text-muted" />
             <span>{todayStr}</span>
           </div>
 
@@ -61,7 +67,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             onClick={() => refreshAll()}
             disabled={isLoading}
             title="Refresh database sync"
-            className="p-2.5 rounded-2xl bg-white border border-black/5 shadow-2xs hover:bg-[#EDEFEB] text-[#111111] transition-all disabled:opacity-50"
+            className="p-2.5 rounded-2xl surface-chip surface-chip-btn transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#111111]' : ''}`} />
           </button>
@@ -71,19 +77,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             onClick={toggleTheme}
             type="button"
             title={theme === 'dark' ? 'Ganti ke Mode Terang (Light)' : 'Ganti ke Mode Gelap (Dark)'}
-            className="p-2.5 rounded-2xl bg-white border border-black/5 shadow-2xs hover:bg-[#EDEFEB] text-[#111111] transition-all active:scale-95 group"
+            className="p-2.5 rounded-2xl surface-chip surface-chip-btn transition-colors active:scale-95 group"
           >
             {theme === 'dark' ? (
               <Sun className="w-4 h-4 text-[#E4FF6B] group-hover:rotate-45 transition-transform" />
             ) : (
-              <Moon className="w-4 h-4 text-[#111111] group-hover:-rotate-12 transition-transform" />
+              <Moon className="w-4 h-4 group-hover:-rotate-12 transition-transform" />
             )}
           </button>
 
           {/* Quick CTA Black Button */}
           <button
             onClick={() => setIsQuickAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#111111] text-white font-bold text-xs hover:bg-[#222222] transition-all duration-200 shadow-md shadow-black/15 active:scale-95 group"
+            className="btn-primary !rounded-full !px-4 !py-2.5 shadow-md active:scale-95 group"
           >
             <span className="w-5 h-5 rounded-full bg-[#E4FF6B] text-[#111111] flex items-center justify-center font-black group-hover:rotate-90 transition-transform">
               <Plus className="w-3.5 h-3.5" />

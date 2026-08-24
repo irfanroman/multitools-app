@@ -3,6 +3,7 @@
 import React from 'react';
 import { PieChart as PieIcon } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { useChartTheme } from '@/lib/useChartTheme';
 
 interface DonutDataItem {
   name: string;
@@ -14,7 +15,14 @@ interface ExpenseDonutChartProps {
   data: DonutDataItem[];
 }
 
-export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({ data }) => {
+const fmtIDR = (val: unknown): [string, string] => [
+  `Rp ${Number(val ?? 0).toLocaleString('id-ID')}`,
+  'Nominal',
+];
+
+const ExpenseDonutChartImpl: React.FC<ExpenseDonutChartProps> = ({ data }) => {
+  const t = useChartTheme();
+
   return (
     <div className="card-base flex flex-col justify-between h-full">
       <div>
@@ -39,14 +47,13 @@ export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({ data }) =>
                   outerRadius={85}
                   paddingAngle={4}
                   dataKey="value"
+                  isAnimationActive={false}
                 >
-                  {data.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  {data.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} stroke="none" />
                   ))}
                 </Pie>
-                <Tooltip
-                  formatter={(val: any) => [`Rp ${Number(val).toLocaleString('id-ID')}`, 'Nominal']}
-                />
+                <Tooltip formatter={fmtIDR} {...t.tooltip} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -57,11 +64,11 @@ export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({ data }) =>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 pt-2 border-t border-black/5">
+      <div className="flex flex-wrap gap-2 pt-2 border-t border-subtle">
         {data.map((d) => (
           <span
             key={d.name}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#111111] bg-[#EDEFEB] px-2.5 py-1 rounded-full"
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-subtle px-2.5 py-1 rounded-full"
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
             <span className="capitalize">{d.name}</span>
@@ -71,3 +78,5 @@ export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({ data }) =>
     </div>
   );
 };
+
+export const ExpenseDonutChart = React.memo(ExpenseDonutChartImpl);

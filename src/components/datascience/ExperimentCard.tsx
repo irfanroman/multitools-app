@@ -48,17 +48,17 @@ export const ExperimentCard: React.FC<ExperimentCardProps> = ({
         </div>
 
         {/* Metrics Grid */}
-        <div className="grid grid-cols-3 gap-1.5 pt-3 mt-3 border-t border-black/5 text-center">
+        <div className="grid grid-cols-3 gap-1.5 pt-3 mt-3 border-t border-subtle text-center">
           {Object.entries(exp.metrics).map(([metricKey, metricVal]) => (
-            <div key={metricKey} className="p-1.5 rounded-xl bg-white border border-black/5 shadow-2xs">
-              <span className="text-[9px] font-bold text-[#7F847C] uppercase block">{metricKey}</span>
+            <div key={metricKey} className="p-1.5 rounded-xl bg-white border border-subtle shadow-2xs">
+              <span className="text-[9px] font-bold text-muted uppercase block">{metricKey}</span>
               <span className="text-xs font-black text-[#111111]">{metricVal}</span>
             </div>
           ))}
         </div>
 
         {exp.notes && (
-          <p className="text-[11px] text-[#7F847C] italic mt-3 bg-white/50 p-2 rounded-xl border border-black/5">
+          <p className="text-[11px] text-muted italic mt-3 bg-white/50 p-2 rounded-xl border border-subtle">
             "{exp.notes}"
           </p>
         )}

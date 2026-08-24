@@ -14,7 +14,7 @@ interface StatCardProps {
   className?: string;
 }
 
-export const StatCard: React.FC<StatCardProps> = ({
+const StatCardImpl: React.FC<StatCardProps> = ({
   title,
   value,
   subtitle,
@@ -28,12 +28,12 @@ export const StatCard: React.FC<StatCardProps> = ({
   const getVariantStyles = () => {
     switch (variant) {
       case 'dark':
-        return 'bg-[#111111] text-white border-black/80 shadow-lg shadow-black/10';
+        return 'card-dark bg-[#111111] text-white border-black/80 shadow-lg shadow-black/10';
       case 'lime':
-        return 'bg-[#E4FF6B] text-[#111111] border-black/10 shadow-md shadow-lime-500/10';
+        return 'card-lime bg-[#E4FF6B] text-[#111111] border-black/10 shadow-md shadow-lime-500/10';
       case 'white':
       default:
-        return 'bg-white text-[#111111] border-black/6 shadow-xs';
+        return 'card-base';
     }
   };
 
@@ -49,7 +49,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         return 'bg-rose-100 text-rose-800';
       case 'neutral':
       default:
-        return 'bg-black/5 text-[#7F847C]';
+        return 'bg-subtle text-muted';
     }
   };
 
@@ -66,7 +66,7 @@ export const StatCard: React.FC<StatCardProps> = ({
                   ? 'bg-white/10 text-[#E4FF6B]'
                   : variant === 'lime'
                   ? 'bg-black/10 text-[#111111]'
-                  : 'bg-[#EDEFEB] text-[#111111]'
+                  : 'bg-subtle'
               }`}
             >
               {icon}
@@ -74,7 +74,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           )}
           <span
             className={`text-xs font-semibold uppercase tracking-wider ${
-              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-[#111111]/80 font-bold' : 'text-[#7F847C]'
+              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-[#111111]/80 font-bold' : 'text-muted'
             }`}
           >
             {title}
@@ -95,7 +95,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         {subtitle && (
           <p
             className={`text-xs font-medium ${
-              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-[#111111]/80 font-semibold' : 'text-[#7F847C]'
+              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-[#111111]/80 font-semibold' : 'text-muted'
             }`}
           >
             {subtitle}
@@ -103,7 +103,11 @@ export const StatCard: React.FC<StatCardProps> = ({
         )}
       </div>
 
-      {actionButton && <div className="mt-3 pt-3 border-t border-black/10">{actionButton}</div>}
+      {actionButton && (
+        <div className="mt-3 pt-3 border-t border-current/15">{actionButton}</div>
+      )}
     </div>
   );
 };
+
+export const StatCard = React.memo(StatCardImpl);

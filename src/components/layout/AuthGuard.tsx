@@ -1,65 +1,77 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Logo } from '@/components/ui/Logo';
 
+/**
+ * Session state is process-wide, not route-scoped. Keeping the subscription in
+ * an effect keyed on `pathname` (as before) tore down and rebuilt the auth
+ * listener — and re-ran getSession() — on every single navigation.
+ *
+ * Here the listener is created once; a ref carries the current pathname into
+ * it so redirects still target the right route.
+ */
 export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
+  const pathRef = useRef(pathname);
+  const routerRef = useRef(router);
+
+  // Synced after commit — writing a ref during render is unsafe under
+  // concurrent rendering, and every reader below runs asynchronously.
   useEffect(() => {
-    // 1. Initial Session Check
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const hasUser = !!session?.user;
-        setIsAuthenticated(hasUser);
+    pathRef.current = pathname;
+    routerRef.current = router;
+  }, [pathname, router]);
 
-        if (!hasUser && pathname !== '/login') {
-          router.replace('/login');
-        } else if (hasUser && pathname === '/login') {
-          router.replace('/');
-        }
-      } catch (err) {
-        console.warn('Auth check error:', err);
-        setIsAuthenticated(false);
-        if (pathname !== '/login') {
-          router.replace('/login');
-        }
-      }
-    };
+  useEffect(() => {
+    let active = true;
 
-    checkAuth();
-
-    // 2. Realtime Auth State Listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      const hasUser = !!session?.user;
+    const applySession = (hasUser: boolean) => {
+      if (!active) return;
       setIsAuthenticated(hasUser);
 
-      if (!hasUser && pathname !== '/login') {
-        router.replace('/login');
-      } else if (hasUser && pathname === '/login') {
-        router.replace('/');
-      }
+      const path = pathRef.current;
+      if (!hasUser && path !== '/login') routerRef.current.replace('/login');
+      else if (hasUser && path === '/login') routerRef.current.replace('/');
+    };
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => applySession(!!data.session?.user))
+      .catch((err) => {
+        console.warn('Auth check error:', err);
+        applySession(false);
+      });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(!!session?.user);
     });
 
     return () => {
+      active = false;
       subscription.unsubscribe();
     };
-  }, [pathname, router]);
+  }, []);
 
-  // If on /login, let login page render immediately
+  // The login route renders itself; no gate, no splash.
   if (pathname === '/login') {
     return <>{children}</>;
   }
 
-  // While checking auth on protected routes, show sleek minimalist splash
   if (isAuthenticated === null || !isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#111111] flex flex-col items-center justify-center gap-4 text-white">
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed inset-0 z-50 bg-[#111111] flex flex-col items-center justify-center gap-4 text-white"
+      >
         <div className="relative">
           <div className="absolute -inset-4 bg-[#E4FF6B]/20 rounded-full blur-xl animate-pulse" />
           <Logo className="w-16 h-20 text-[#E4FF6B] relative z-10 animate-bounce" fill="#E4FF6B" />
@@ -72,6 +84,5 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     );
   }
 
-  // Authenticated user: render protected children
   return <>{children}</>;
 };

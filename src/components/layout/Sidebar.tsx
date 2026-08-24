@@ -13,11 +13,9 @@ import {
   User,
   LogOut,
   Settings,
-  Shield,
   X,
-  Sparkles,
 } from 'lucide-react';
-import { useDashboard } from '@/lib/DashboardContext';
+import { useDashboardData } from '@/lib/DashboardContext';
 import { supabase } from '@/lib/supabaseClient';
 import { Logo } from '@/components/ui/Logo';
 
@@ -32,7 +30,7 @@ const NAV_ITEMS = [
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const { streaks, isOnline } = useDashboard();
+  const { streaks, isOnline } = useDashboardData();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -40,55 +38,57 @@ export const Sidebar: React.FC = () => {
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Check auth user info if logged in (Realtime Listener)
+  /**
+   * One listener, one profile lookup.
+   *
+   * Previously fetchUser() ran on mount AND onAuthStateChange fired
+   * immediately with INITIAL_SESSION, so every page load issued two
+   * identical `profiles` queries. The listener alone covers both cases.
+   */
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const user = sessionData?.session?.user;
+    let active = true;
+    let lastUserId: string | null = null;
 
-      if (user) {
-        setCurrentUserEmail(user.email || null);
-        
-        // Cek profile di tabel profiles
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user;
+
+      if (!user) {
+        lastUserId = null;
+        if (active) {
+          setCurrentUserEmail(null);
+          setCurrentUsername(null);
+        }
+        return;
+      }
+
+      if (active) setCurrentUserEmail(user.email ?? null);
+
+      // Token refreshes fire this listener too; skip the round-trip when the
+      // identity has not actually changed.
+      if (user.id === lastUserId) return;
+      lastUserId = user.id;
+
+      const fallback = user.user_metadata?.username
+        || user.user_metadata?.full_name
+        || (user.email ? user.email.split('@')[0] : null);
+      if (active) setCurrentUsername(fallback);
+
+      try {
         const { data: profile } = await supabase
           .from('profiles')
           .select('username, full_name')
           .eq('id', user.id)
           .maybeSingle();
 
-        const name = profile?.username || profile?.full_name || user.user_metadata?.username || user.user_metadata?.full_name;
-        if (name) {
-          setCurrentUsername(name);
-        } else if (user.email) {
-          setCurrentUsername(user.email.split('@')[0]);
-        }
-      } else {
-        setCurrentUserEmail(null);
-        setCurrentUsername(null);
-      }
-    };
-
-    fetchUser();
-
-    // Subscribe to auth state changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setCurrentUserEmail(session.user.email || null);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('username, full_name')
-          .eq('id', session.user.id)
-          .maybeSingle();
-        
-        const name = profile?.username || profile?.full_name || session.user.user_metadata?.username || session.user.user_metadata?.full_name;
-        setCurrentUsername(name || (session.user.email ? session.user.email.split('@')[0] : null));
-      } else {
-        setCurrentUserEmail(null);
-        setCurrentUsername(null);
+        const name = profile?.username || profile?.full_name;
+        if (active && name) setCurrentUsername(name);
+      } catch (err) {
+        console.warn('Profile lookup failed:', err);
       }
     });
 
     return () => {
+      active = false;
       authListener?.subscription.unsubscribe();
     };
   }, []);
@@ -214,7 +214,7 @@ export const Sidebar: React.FC = () => {
 
           {/* Floating Dropdown Menu Popover */}
           {isMenuOpen && (
-            <div className="absolute left-16 bottom-0 w-56 bg-[#181818] border border-white/10 rounded-3xl p-3 shadow-2xl z-50 animate-in fade-in slide-in-from-left-2 duration-200">
+            <div className="absolute left-16 bottom-0 w-56 bg-[#181818] border border-white/10 rounded-3xl p-3 shadow-2xl z-50 animate-fade-in">
               {/* User info header */}
               <div className="px-3 py-2 border-b border-white/10 mb-2">
                 <div className="text-xs font-black text-white truncate">
@@ -299,7 +299,7 @@ export const Sidebar: React.FC = () => {
       {/* Profile Detail Modal */}
       {isProfileModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#181818] text-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-white/10 animate-in fade-in zoom-in-95">
+          <div className="bg-[#181818] text-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-white/10 animate-fade-in">
             <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
               <div className="flex items-center gap-2">
                 <span className="p-2 rounded-2xl bg-[#E4FF6B] text-[#111111]">

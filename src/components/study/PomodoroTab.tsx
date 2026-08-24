@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, Play, Pause, RotateCcw } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { StudySession } from '@/lib/types';
@@ -18,40 +18,74 @@ export const PomodoroTab: React.FC<PomodoroTabProps> = ({
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [timerSubject, setTimerSubject] = useState('Machine Learning');
   const [timerMode, setTimerMode] = useState<'work' | 'break'>('work');
+  // Replaces alert(), which blocks the main thread and stops the timer UI.
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // `onLogStudySession` can change identity across renders; refs keep the tick
+  // effect from resubscribing because of it.
+  const logRef = useRef(onLogStudySession);
+  const modeRef = useRef(timerMode);
+  const subjectRef = useRef(timerSubject);
+  const secondsRef = useRef(timerSeconds);
+
+  // Synced after commit — writing a ref during render is unsafe under
+  // concurrent rendering.
   useEffect(() => {
-    let interval: any = null;
-    if (isTimerRunning && timerSeconds > 0) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev - 1);
-      }, 1000);
-    } else if (timerSeconds === 0 && isTimerRunning) {
+    logRef.current = onLogStudySession;
+    modeRef.current = timerMode;
+    subjectRef.current = timerSubject;
+    secondsRef.current = timerSeconds;
+  }, [onLogStudySession, timerMode, timerSubject, timerSeconds]);
+
+  /**
+   * One interval for the whole run, with completion handled inside the tick.
+   *
+   * The previous effect listed `timerSeconds` as a dependency, so every tick
+   * cleared and recreated the interval — 1500 teardown/setup cycles across a
+   * 25-minute session, each one re-anchoring the clock and adding drift.
+   */
+  useEffect(() => {
+    if (!isTimerRunning) return;
+
+    const id = setInterval(() => {
+      const next = secondsRef.current - 1;
+
+      if (next > 0) {
+        secondsRef.current = next;
+        setTimerSeconds(next);
+        return;
+      }
+
+      // Reached zero: stop, log, and roll over to the next phase.
+      secondsRef.current = 0;
       setIsTimerRunning(false);
       confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
-      if (timerMode === 'work') {
-        onLogStudySession({
-          subject: timerSubject,
+
+      if (modeRef.current === 'work') {
+        void logRef.current({
+          subject: subjectRef.current,
           duration_minutes: 25,
-          date: new Date().toISOString().split('T')[0],
+          date: new Date().toISOString().slice(0, 10),
           notes: 'Pomodoro focus session completed',
         });
-        alert('Sesi Pomodoro 25 Menit Selesai! Waktunya istirahat sejenak.');
+        setStatusMessage('Sesi Pomodoro 25 menit selesai. Waktunya istirahat sejenak.');
         setTimerMode('break');
         setTimerSeconds(5 * 60);
       } else {
-        alert('Istirahat selesai! Siap untuk sesi belajar berikutnya?');
+        setStatusMessage('Istirahat selesai. Siap untuk sesi belajar berikutnya?');
         setTimerMode('work');
         setTimerSeconds(25 * 60);
       }
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timerSeconds, timerMode, timerSubject, onLogStudySession]);
+    }, 1000);
 
-  const formatTime = (secs: number) => {
+    return () => clearInterval(id);
+  }, [isTimerRunning]);
+
+  const formatTime = useCallback((secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
   return (
     <section className="max-w-md mx-auto card-dark p-6 sm:p-8 text-center space-y-6">
@@ -84,6 +118,22 @@ export const PomodoroTab: React.FC<PomodoroTabProps> = ({
         </select>
       </div>
 
+      {statusMessage && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#E4FF6B]/15 border border-[#E4FF6B]/30 text-left"
+        >
+          <span className="text-xs font-bold text-[#E4FF6B]">{statusMessage}</span>
+          <button
+            type="button"
+            onClick={() => setStatusMessage(null)}
+            className="text-[10px] font-black text-white/60 hover:text-white shrink-0"
+          >
+            TUTUP
+          </button>
+        </div>
+      )}
+
       <div className="py-4">
         <div className="text-6xl sm:text-7xl font-black tracking-tighter text-[#E4FF6B] font-mono tabular-nums">
           {formatTime(timerSeconds)}
@@ -102,8 +152,10 @@ export const PomodoroTab: React.FC<PomodoroTabProps> = ({
         </button>
         <button
           onClick={() => {
+            const reset = timerMode === 'work' ? 25 * 60 : 5 * 60;
             setIsTimerRunning(false);
-            setTimerSeconds(timerMode === 'work' ? 25 * 60 : 5 * 60);
+            secondsRef.current = reset;
+            setTimerSeconds(reset);
           }}
           title="Reset Timer"
           className="p-3.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"

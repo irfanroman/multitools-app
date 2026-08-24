@@ -40,7 +40,7 @@ export const CodeSnippetBlock: React.FC<CodeSnippetBlockProps> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={handleCopy}
-              className="p-1.5 rounded-xl bg-white hover:bg-[#EDEFEB] border border-black/5 text-[#111111] text-xs font-bold flex items-center gap-1 shadow-2xs transition-all"
+              className="p-1.5 rounded-xl bg-white hover:bg-subtle border border-subtle text-[#111111] text-xs font-bold flex items-center gap-1 shadow-2xs transition-all"
               title="Copy Code"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -57,7 +57,7 @@ export const CodeSnippetBlock: React.FC<CodeSnippetBlockProps> = ({
         </div>
 
         {snip.description && (
-          <p className="text-xs text-[#7F847C] mb-2">{snip.description}</p>
+          <p className="text-xs text-muted mb-2">{snip.description}</p>
         )}
 
         <div className="bg-[#111111] text-[#EDEFEB] p-3 rounded-xl font-mono text-[11px] overflow-x-auto max-h-48 leading-relaxed shadow-inner">
@@ -65,7 +65,7 @@ export const CodeSnippetBlock: React.FC<CodeSnippetBlockProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1 pt-2 border-t border-black/5">
+      <div className="flex flex-wrap gap-1 pt-2 border-t border-subtle">
         {snip.tags.map((tag) => (
           <span key={tag} className="badge badge-neutral text-[9px]">
             #{tag}

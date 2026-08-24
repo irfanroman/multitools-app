@@ -85,7 +85,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   return (
     <ModalWrapper isOpen={true} onClose={onClose} title="Edit Transaksi" icon={<Pencil className="w-4 h-4" />} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#EDEFEB] rounded-2xl">
+        <div className="grid grid-cols-3 gap-1.5 p-1 bg-subtle rounded-2xl">
           {typeButtons.map((btn) => (
             <button
               key={btn.key}
@@ -95,7 +95,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 if (btn.key === 'transfer') setCategory('pemindahan dana');
               }}
               className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
-                type === btn.key ? btn.activeClass : 'text-[#7F847C] hover:text-[#111111]'
+                type === btn.key ? btn.activeClass : 'text-muted hover:text-current'
               }`}
             >
               {btn.label}
@@ -187,7 +187,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           </label>
         </div>
 
-        <div className="flex justify-between items-center pt-3 border-t border-black/5">
+        <div className="flex justify-between items-center pt-3 border-t border-subtle">
           <button type="button" onClick={handleDelete} className="btn-danger">
             <Trash2 className="w-3.5 h-3.5" /> Hapus Transaksi
           </button>

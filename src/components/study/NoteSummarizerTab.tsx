@@ -42,15 +42,25 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
   }, [notes]);
 
   const filteredNotes = useMemo(() => {
+    // `q` and the subject key were re-lowercased for every note on every
+    // keystroke. Hoisting them makes this a single allocation-free pass, and
+    // the unfiltered case now returns the original array so downstream memos
+    // keep their identity.
+    const q = noteSearchQuery.trim().toLowerCase();
+    const subjectKey = noteSubjectFilter.toLowerCase();
+    const allSubjects = noteSubjectFilter === 'all';
+
+    if (!q && allSubjects) return notes;
+
     return notes.filter((n) => {
-      const matchesSubject = noteSubjectFilter === 'all' || n.subject.toLowerCase() === noteSubjectFilter.toLowerCase();
-      const q = noteSearchQuery.toLowerCase();
-      const matchesSearch =
+      if (!allSubjects && n.subject.toLowerCase() !== subjectKey) return false;
+      if (!q) return true;
+      return (
         n.title.toLowerCase().includes(q) ||
         n.subject.toLowerCase().includes(q) ||
-        (n.summary && n.summary.toLowerCase().includes(q)) ||
-        n.raw_content.toLowerCase().includes(q);
-      return matchesSubject && matchesSearch;
+        (n.summary?.toLowerCase().includes(q) ?? false) ||
+        n.raw_content.toLowerCase().includes(q)
+      );
     });
   }, [notes, noteSubjectFilter, noteSearchQuery]);
 
@@ -207,16 +217,16 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
               <div className="space-y-4">
                 <div className="card-muted">
                   <div className="flex justify-between items-start mb-1">
-                    <h4 className="text-sm font-extrabold text-[#111111]">{selectedNote.title}</h4>
+                    <h4 className="text-sm font-extrabold">{selectedNote.title}</h4>
                     <button
                       onClick={() => handleOpenEditNote(selectedNote)}
-                      className="p-1 text-[#7F847C] hover:text-[#111111] transition-colors"
+                      className="btn-icon !p-1"
                       title="Edit Catatan"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  <p className="text-xs text-[#111111]/80 leading-relaxed italic">
+                  <p className="text-xs text-secondary leading-relaxed italic">
                     "{selectedNote.summary || 'Ringkasan otomatis...'}"
                   </p>
                 </div>
@@ -228,7 +238,7 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
                       {selectedNote.key_points.map((pt, idx) => (
                         <li
                           key={idx}
-                          className="flex items-start gap-2 text-xs text-[#111111] p-2.5 rounded-xl bg-white border border-black/5 shadow-2xs"
+                          className="flex items-start gap-2 text-xs p-2.5 rounded-xl surface-chip"
                         >
                           <span className="w-5 h-5 rounded-full bg-[#E4FF6B] text-[#111111] font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
                             {idx + 1}
@@ -250,7 +260,7 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
           </div>
 
           {selectedNote && (
-            <div className="mt-6 pt-4 border-t border-black/5 flex items-center justify-between gap-2">
+            <div className="mt-6 pt-4 border-t border-subtle flex items-center justify-between gap-2">
               <button
                 onClick={() => onConvertToFlashcards(selectedNote)}
                 className="flex-1 btn-primary justify-center py-2.5"
@@ -282,7 +292,7 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
 
           <div className="filter-bar">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-[#7F847C] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Cari rangkuman..."
@@ -316,10 +326,8 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
                 <div
                   key={n.id}
                   onClick={() => onSelectNote(n)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-[#111111] text-white border-black shadow-md'
-                      : 'card-muted text-[#111111] hover:border-black/20 hover:bg-[#EDEFEB]'
+                  className={`p-4 rounded-2xl border flex flex-col justify-between ${
+                    isSelected ? 'tile-selected' : 'card-muted tile-selectable'
                   }`}
                 >
                   <div>
@@ -336,15 +344,15 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
 
                     <p
                       className={`text-[11px] line-clamp-3 leading-relaxed mb-3 ${
-                        isSelected ? 'text-white/80' : 'text-[#7F847C]'
+                        isSelected ? 'opacity-80' : 'text-muted'
                       }`}
                     >
                       {n.summary || n.raw_content}
                     </p>
                   </div>
 
-                  <div className="pt-2 border-t border-current/10 flex items-center justify-between text-[10px]">
-                    <span className={isSelected ? 'text-white/60' : 'text-[#7F847C]'}>
+                  <div className="pt-2 border-t border-current/15 flex items-center justify-between text-[10px]">
+                    <span className={isSelected ? 'opacity-70' : 'text-muted'}>
                       {n.created_at || 'Baru'}
                     </span>
                     <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -352,7 +360,7 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
                         onClick={() => onConvertToFlashcards(n)}
                         title="Generate Flashcards"
                         className={`p-1 rounded-md transition-colors ${
-                          isSelected ? 'hover:bg-white/20 text-[#E4FF6B]' : 'hover:bg-black/10 text-[#111111]'
+                          isSelected ? 'hover:bg-white/20 text-[#E4FF6B]' : 'hover:bg-black/10 dark:hover:bg-white/10'
                         }`}
                       >
                         <Sparkles className="w-3.5 h-3.5" />
@@ -361,7 +369,7 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
                         onClick={() => handleOpenEditNote(n)}
                         title="Edit Catatan"
                         className={`p-1 rounded-md transition-colors ${
-                          isSelected ? 'hover:bg-white/20 text-white' : 'hover:bg-black/10 text-[#7F847C]'
+                          isSelected ? 'hover:bg-white/20' : 'hover:bg-black/10 dark:hover:bg-white/10 text-muted'
                         }`}
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -427,7 +435,7 @@ export const NoteSummarizerTab: React.FC<NoteSummarizerTabProps> = ({
               className="input-field"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+          <div className="flex justify-end gap-2 pt-2 border-t border-subtle">
             <button
               type="button"
               onClick={() => setEditingNote(null)}

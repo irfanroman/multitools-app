@@ -10,19 +10,11 @@ import {
   SunMedium,
   TrendingUp,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from 'recharts';
 import confetti from 'canvas-confetti';
 import { useDashboard } from '@/lib/DashboardContext';
 import { TopHeader } from '@/components/layout/TopHeader';
 import { StatCard } from '@/components/ui/StatCard';
+import { MoodTrendChart } from '@/components/charts/lazy';
 
 const MOOD_OPTIONS = [
   { score: 1, emoji: '😫', label: 'Lelah / Burnout', tag: 'tired' },
@@ -40,21 +32,30 @@ export default function JournalPage() {
   const [selectedTag, setSelectedTag] = useState('productive');
   const [customTags, setCustomTags] = useState('coding, ml-study');
 
-  const journalStreak = streaks.find((s) => s.module === 'journal')?.current_streak || 0;
 
-  const avgMood = useMemo(() => {
-    if (journalEntries.length === 0) return '0.0';
-    const sum = journalEntries.reduce((s, j) => s + j.mood_score, 0);
-    return (sum / journalEntries.length).toFixed(1);
-  }, [journalEntries]);
+  const journalStreakMemo = useMemo(
+    () => streaks.find((s) => s.module === 'journal')?.current_streak || 0,
+    [streaks]
+  );
 
-  const moodChartData = useMemo(() => {
-    const sorted = [...journalEntries].sort((a, b) => a.date.localeCompare(b.date));
-    return sorted.map((j) => ({
-      date: j.date.slice(5),
-      score: j.mood_score,
-      tag: j.mood_tag,
-    }));
+  // One pass builds both the average and the chart series; the previous code
+  // walked the list twice and copied it a third time before sorting.
+  const { avgMood, moodChartData } = useMemo(() => {
+    if (journalEntries.length === 0) {
+      return { avgMood: '0.0', moodChartData: [] as { date: string; score: number; tag: string }[] };
+    }
+
+    let sum = 0;
+    const series = journalEntries.map((j) => {
+      sum += j.mood_score;
+      return { key: j.date, date: j.date.slice(5), score: j.mood_score, tag: j.mood_tag };
+    });
+    series.sort((a, b) => a.key.localeCompare(b.key));
+
+    return {
+      avgMood: (sum / journalEntries.length).toFixed(1),
+      moodChartData: series,
+    };
   }, [journalEntries]);
 
   const handleSaveEntry = async (e: React.FormEvent) => {
@@ -86,7 +87,7 @@ export default function JournalPage() {
         <StatCard
           variant="dark"
           title="Mindful Journal Streak"
-          value={`${journalStreak} Hari Refleksi`}
+          value={`${journalStreakMemo} Hari Refleksi`}
           subtitle="Konsistensi mencatat perasaan & energi harian"
           badgeText="Mindful Habit"
           badgeType="lime"
@@ -212,43 +213,12 @@ export default function JournalPage() {
               Visualisasi tren kestabilan emosi & energi produktivitas
             </p>
 
-            <div className="h-64 w-full">
-              {moodChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={moodChartData}>
-                    <defs>
-                      <linearGradient id="moodGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#E4FF6B" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="#E4FF6B" stopOpacity={0.05} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                    <XAxis dataKey="date" stroke="#7F847C" fontSize={11} />
-                    <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} stroke="#7F847C" fontSize={11} />
-                    <Tooltip
-                      formatter={(val: any) => [`Skor: ${val} / 5`, 'Mood Level']}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="score"
-                      stroke="#111111"
-                      strokeWidth={3}
-                      fillOpacity={1}
-                      fill="url(#moodGrad)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center section-subtitle">
-                  Belum ada catatan mood. Isi refleksi untuk melihat grafik.
-                </div>
-              )}
-            </div>
+            <MoodTrendChart data={moodChartData} />
           </div>
 
-          <div className="mt-4 pt-4 border-t border-black/5 flex items-center justify-between section-subtitle">
+          <div className="mt-4 pt-4 border-t border-subtle flex items-center justify-between section-subtitle">
             <span>1 = Lelah / 3 = Tenang / 5 = Super Produktif</span>
-            <span className="font-bold text-[#111111]">Daily Tracker</span>
+            <span className="font-bold">Daily Tracker</span>
           </div>
         </div>
       </section>
@@ -262,10 +232,10 @@ export default function JournalPage() {
             journalEntries.map((j) => (
               <div
                 key={j.id}
-                className="py-4 hover:bg-[#EDEFEB]/40 px-3 rounded-2xl transition-colors flex items-start justify-between gap-4"
+                className="py-4 row-hover px-3 rounded-2xl flex items-start justify-between gap-4"
               >
                 <div className="flex items-start gap-3.5 min-w-0">
-                  <span className="text-2xl sm:text-3xl p-2 rounded-2xl bg-[#EDEFEB] shrink-0">
+                  <span className="text-2xl sm:text-3xl p-2 rounded-2xl bg-subtle shrink-0">
                     {j.mood_score === 5
                       ? '🔥'
                       : j.mood_score === 4
@@ -279,13 +249,13 @@ export default function JournalPage() {
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-xs font-black text-[#111111] capitalize">
+                      <span className="text-xs font-black capitalize">
                         Mood: {j.mood_tag}
                       </span>
-                      <span className="text-[10px] text-[#7F847C]">• {j.date}</span>
+                      <span className="text-[10px] text-muted">• {j.date}</span>
                     </div>
 
-                    <p className="text-xs text-[#111111]/85 leading-relaxed mb-2">{j.content}</p>
+                    <p className="text-xs text-secondary leading-relaxed mb-2">{j.content}</p>
 
                     <div className="flex gap-1.5 flex-wrap">
                       {j.tags.map((tag) => (

@@ -10,16 +10,16 @@ interface TransactionRowProps {
   onDelete: (id: string) => void;
 }
 
-export const TransactionRow: React.FC<TransactionRowProps> = ({ transaction: t, onEdit, onDelete }) => {
+const TransactionRowImpl: React.FC<TransactionRowProps> = ({ transaction: t, onEdit, onDelete }) => {
   const iconBg =
     t.type === 'income' ? 'bg-emerald-100 text-emerald-800'
     : t.type === 'transfer' ? 'bg-indigo-100 text-indigo-700'
-    : 'bg-[#EDEFEB] text-[#111111]';
+    : 'bg-subtle';
 
   const amountColor =
     t.type === 'income' ? 'text-emerald-600'
     : t.type === 'transfer' ? 'text-indigo-600'
-    : 'text-[#111111]';
+    : '';
 
   const prefix = t.type === 'income' ? '+' : t.type === 'transfer' ? '↔' : '-';
 
@@ -38,14 +38,14 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ transaction: t, 
 
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-[#111111] truncate">{t.title}</span>
+            <span className="text-sm font-bold truncate">{t.title}</span>
             {t.is_recurring && (
               <span className="badge badge-dark">
                 <Repeat className="w-2.5 h-2.5" /> Recurring
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 text-xs text-[#7F847C] mt-0.5 flex-wrap">
+          <div className="flex items-center gap-2 text-xs text-muted mt-0.5 flex-wrap">
             <span className="capitalize">{t.category}</span>
             <span>•</span>
             {t.type === 'transfer' ? (
@@ -53,7 +53,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ transaction: t, 
                 {t.payment_method} → {t.to_payment_method || 'Dompet Lain'}
               </span>
             ) : (
-              <span className="font-semibold text-[#111111] bg-[#EDEFEB] px-2 py-0.5 rounded-md text-[10px]">
+              <span className="font-semibold bg-subtle px-2 py-0.5 rounded-md text-[10px]">
                 {t.payment_method}
               </span>
             )}
@@ -68,8 +68,8 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ transaction: t, 
           <span className={`text-sm font-black ${amountColor}`}>
             {prefix} Rp {t.amount.toLocaleString('id-ID')}
           </span>
-          {t.notes && <p className="text-[10px] text-[#7F847C] max-w-[150px] truncate">{t.notes}</p>}
-          <span className="text-[10px] text-[#7F847C] sm:hidden block">{t.date}</span>
+          {t.notes && <p className="text-[10px] text-muted max-w-[150px] truncate">{t.notes}</p>}
+          <span className="text-[10px] text-muted sm:hidden block">{t.date}</span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -84,3 +84,10 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({ transaction: t, 
     </div>
   );
 };
+
+/**
+ * Ten of these render per page of history and they re-rendered on every
+ * keystroke in the search box. `onEdit`/`onDelete` are now stable callbacks
+ * from the actions context, so the memo actually holds.
+ */
+export const TransactionRow = React.memo(TransactionRowImpl);

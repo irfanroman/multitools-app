@@ -26,7 +26,7 @@ interface TransactionFiltersProps {
   onAddClick: () => void;
 }
 
-export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
+const TransactionFiltersImpl: React.FC<TransactionFiltersProps> = ({
   searchQuery, onSearchChange,
   filterDate, onFilterDateChange,
   filterType, onFilterTypeChange,
@@ -51,7 +51,7 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
           type="date"
           value={filterDate}
           onChange={(e) => onFilterDateChange(e.target.value)}
-          className="input-filter text-[#111111] cursor-pointer"
+          className="input-filter cursor-pointer"
           title="Filter berdasarkan tanggal"
         />
         {filterDate && (
@@ -59,7 +59,7 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
             type="button"
             onClick={() => onFilterDateChange('')}
             title="Hapus filter tanggal"
-            className="absolute right-2 p-0.5 rounded-full hover:bg-black/10 text-[#7F847C]"
+            className="absolute right-2 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-muted"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -128,3 +128,5 @@ export const TransactionFilters: React.FC<TransactionFiltersProps> = ({
     </div>
   );
 };
+
+export const TransactionFilters = React.memo(TransactionFiltersImpl);

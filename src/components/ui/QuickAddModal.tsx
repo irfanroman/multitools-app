@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Wallet, GraduationCap, LineChart, BookHeart, Sparkles } from 'lucide-react';
-import { useDashboard } from '@/lib/DashboardContext';
+import { useDashboardData, useDashboardActions } from '@/lib/DashboardContext';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface QuickAddModalProps {
@@ -16,15 +16,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   onClose,
   defaultTab = 'finance',
 }) => {
-  const {
-    wallets,
-    categories,
-    addTransaction,
-    addNote,
-    addFlashcard,
-    addAssignment,
-    addJournalEntry,
-  } = useDashboard();
+  // Split subscriptions: the action handles never change identity, so only
+  // the wallets/categories lists can trigger a re-render of this modal.
+  const { wallets, categories } = useDashboardData();
+  const { addTransaction, addNote, addFlashcard, addAssignment, addJournalEntry } =
+    useDashboardActions();
 
   const [activeTab, setActiveTab] = useState<'finance' | 'note' | 'flashcard' | 'assignment' | 'journal'>(
     defaultTab
@@ -148,26 +144,26 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-[#FFFFFF] rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-panel" style={{ maxWidth: '32rem' }} role="dialog" aria-modal="true">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-black/5">
+        <div className="flex items-center justify-between pb-4 border-b border-subtle">
           <div className="flex items-center gap-2">
             <span className="p-2 rounded-2xl bg-[#E4FF6B] text-[#111111]">
               <Sparkles className="w-4 h-4" />
             </span>
-            <h2 className="text-xl font-extrabold text-[#111111]">Quick Entry</h2>
+            <h2 className="text-xl font-extrabold">Quick Entry</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-[#EDEFEB] text-[#7F847C] transition-colors"
+            className="modal-close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Selection */}
-        <div className="flex gap-1.5 p-1 bg-[#EDEFEB] rounded-2xl my-4 overflow-x-auto">
+        <div className="flex gap-1.5 p-1 bg-subtle rounded-2xl my-4 overflow-x-auto">
           {[
             { key: 'finance', label: 'Transaksi', icon: Wallet },
             { key: 'note', label: 'Catatan', icon: GraduationCap },
@@ -184,8 +180,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 onClick={() => setActiveTab(tab.key as any)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
                   isTabActive
-                    ? 'bg-[#111111] text-[#E4FF6B] shadow-xs'
-                    : 'text-[#7F847C] hover:text-[#111111]'
+                    ? 'quick-tab-active'
+                    : 'text-muted hover:text-current'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -199,14 +195,14 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         {activeTab === 'finance' && (
           <form onSubmit={handleFinanceSubmit} className="space-y-4">
             {/* Income vs Expense vs Transfer Toggle */}
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#EDEFEB] rounded-2xl">
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-subtle rounded-2xl">
               <button
                 type="button"
                 onClick={() => setTxType('expense')}
                 className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                   txType === 'expense'
                     ? 'bg-rose-500 text-white shadow-xs'
-                    : 'text-[#7F847C] hover:text-[#111111]'
+                    : 'text-muted hover:text-current'
                 }`}
               >
                 Pengeluaran
@@ -217,7 +213,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                   txType === 'income'
                     ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-[#7F847C] hover:text-[#111111]'
+                    : 'text-muted hover:text-current'
                 }`}
               >
                 Pemasukan
@@ -228,7 +224,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                   txType === 'transfer'
                     ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-[#7F847C] hover:text-[#111111]'
+                    : 'text-muted hover:text-current'
                 }`}
               >
                 Transfer / Pindah
@@ -236,7 +232,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Deskripsi Transaksi</label>
+              <label className="label-field">Deskripsi Transaksi</label>
               <input
                 type="text"
                 required
@@ -247,13 +243,13 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 }
                 value={txTitle}
                 onChange={(e) => setTxTitle(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Nominal (Rp)</label>
+                <label className="label-field">Nominal (Rp)</label>
                 <input
                   type="number"
                   required
@@ -261,18 +257,18 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                   placeholder="50000"
                   value={txAmount}
                   onChange={(e) => setTxAmount(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  className="input-field"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tanggal Transaksi</label>
+                <label className="label-field">Tanggal Transaksi</label>
                 <input
                   type="date"
                   required
                   value={txDate}
                   onChange={(e) => setTxDate(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  className="input-field"
                 />
               </div>
             </div>
@@ -316,7 +312,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
+                  <label className="label-field">Metode Pembayaran</label>
                   <CustomSelect
                     value={txPaymentMethod}
                     onChange={(v) => setTxPaymentMethod(v)}
@@ -330,7 +326,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
+                  <label className="label-field">Kategori</label>
                   <CustomSelect
                     value={txCategory}
                     onChange={(v) => setTxCategory(v)}
@@ -351,7 +347,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             )}
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">
+              <label className="label-field">
                 {txType === 'expense' ? 'Catatan (Opsional)' : 'Catatan / Sumber (Opsional)'}
               </label>
               <input
@@ -359,13 +355,13 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 placeholder={txType === 'expense' ? 'Catatan tambahan' : 'Contoh: Gaji freelance, transfer, beasiswa'}
                 value={txNotes}
                 onChange={(e) => setTxNotes(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:bg-[#222222] transition-colors shadow-md"
+              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:opacity-90 transition-colors shadow-md"
             >
               Simpan Transaksi
             </button>
@@ -376,31 +372,31 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         {activeTab === 'note' && (
           <form onSubmit={handleNoteSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Judul Materi / Paper</label>
+              <label className="label-field">Judul Materi / Paper</label>
               <input
                 type="text"
                 required
                 placeholder="Contoh: Gradient Boosting & CatBoost"
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Mata Kuliah / Subjek</label>
+              <label className="label-field">Mata Kuliah / Subjek</label>
               <input
                 type="text"
                 required
                 placeholder="Machine Learning, Linear Algebra, dll"
                 value={noteSubject}
                 onChange={(e) => setNoteSubject(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">
+              <label className="label-field">
                 Konten Catatan Mentah (Akan diringkas otomatis)
               </label>
               <textarea
@@ -409,13 +405,13 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 placeholder="Tulis atau paste catatan kuliah di sini..."
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:bg-[#222222] transition-colors shadow-md flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:opacity-90 transition-colors shadow-md flex items-center justify-center gap-2"
             >
               <Sparkles className="w-4 h-4" />
               <span>Simpan & Auto-Summarize</span>
@@ -427,44 +423,44 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         {activeTab === 'flashcard' && (
           <form onSubmit={handleFlashcardSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Subjek / Topik</label>
+              <label className="label-field">Subjek / Topik</label>
               <input
                 type="text"
                 required
                 placeholder="Machine Learning / Statistik"
                 value={fcSubject}
                 onChange={(e) => setFcSubject(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Pertanyaan (Front)</label>
+              <label className="label-field">Pertanyaan (Front)</label>
               <input
                 type="text"
                 required
                 placeholder="Apa perbedaan L1 vs L2 Regularization?"
                 value={fcQuestion}
                 onChange={(e) => setFcQuestion(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Jawaban (Back)</label>
+              <label className="label-field">Jawaban (Back)</label>
               <textarea
                 required
                 rows={3}
                 placeholder="L1 (Lasso) menghasilkan sparse weights..."
                 value={fcAnswer}
                 onChange={(e) => setFcAnswer(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:bg-[#222222] transition-colors shadow-md"
+              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:opacity-90 transition-colors shadow-md"
             >
               Tambah Flashcard
             </button>
@@ -475,32 +471,32 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         {activeTab === 'assignment' && (
           <form onSubmit={handleAssignmentSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Judul Tugas / Deadline</label>
+              <label className="label-field">Judul Tugas / Deadline</label>
               <input
                 type="text"
                 required
                 placeholder="Tugas Praktikum Deep Learning"
                 value={assTitle}
                 onChange={(e) => setAssTitle(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Mata Kuliah</label>
+                <label className="label-field">Mata Kuliah</label>
                 <input
                   type="text"
                   required
                   placeholder="Data Mining"
                   value={assSubject}
                   onChange={(e) => setAssSubject(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  className="input-field"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Prioritas</label>
+                <label className="label-field">Prioritas</label>
                 <CustomSelect
                   value={assPriority}
                   onChange={(v) => setAssPriority(v as any)}
@@ -514,19 +510,19 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tenggat Waktu (Due Date)</label>
+              <label className="label-field">Tenggat Waktu (Due Date)</label>
               <input
                 type="datetime-local"
                 required
                 value={assDueDate}
                 onChange={(e) => setAssDueDate(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:bg-[#222222] transition-colors shadow-md"
+              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:opacity-90 transition-colors shadow-md"
             >
               Simpan Tugas
             </button>
@@ -566,7 +562,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Mood Tag</label>
+              <label className="label-field">Mood Tag</label>
               <CustomSelect
                 value={journalMoodTag}
                 onChange={(v) => setJournalMoodTag(v)}
@@ -581,20 +577,20 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Refleksi Hari Ini</label>
+              <label className="label-field">Refleksi Hari Ini</label>
               <textarea
                 required
                 rows={3}
                 placeholder="Tuliskan apa yang kamu pelajari atau rasakan hari ini..."
                 value={journalContent}
                 onChange={(e) => setJournalContent(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                className="input-field"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:bg-[#222222] transition-colors shadow-md"
+              className="w-full py-3 rounded-2xl bg-[#111111] text-[#E4FF6B] font-extrabold text-sm hover:opacity-90 transition-colors shadow-md"
             >
               Simpan Journal Entry
             </button>
