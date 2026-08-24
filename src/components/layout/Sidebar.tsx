@@ -127,7 +127,8 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      <aside className="w-18 md:w-20 bg-[#111111] text-white flex flex-col items-center py-6 px-3 justify-between z-30 shrink-0 border-r border-white/5 shadow-2xl relative">
+      {/* Desktop Vertical Sidebar */}
+      <aside className="hidden md:flex w-18 md:w-20 bg-[#111111] text-white flex-col items-center py-6 px-3 justify-between z-30 shrink-0 border-r border-white/5 shadow-2xl relative h-screen sticky top-0">
         {/* Brand Icon / Logo */}
         <div className="flex flex-col items-center gap-2">
           <Link
@@ -264,6 +265,36 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
       </aside>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden bottom-nav">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`bottom-nav-item ${isActive ? 'bottom-nav-item-active' : ''}`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="truncate max-w-[60px]">{item.label}</span>
+            </Link>
+          );
+        })}
+
+        {/* Mobile Profile Trigger */}
+        <button
+          onClick={() => setIsProfileModalOpen(true)}
+          className="bottom-nav-item"
+        >
+          <div className="w-5 h-5 rounded-full bg-[#E4FF6B] text-[#111111] flex items-center justify-center text-[10px] font-black">
+            {userInitial}
+          </div>
+          <span>Profil</span>
+        </button>
+      </nav>
 
       {/* Profile Detail Modal */}
       {isProfileModalOpen && (

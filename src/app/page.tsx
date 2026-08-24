@@ -9,10 +9,6 @@ import {
   BookHeart,
   TrendingUp,
   ArrowRight,
-  Clock,
-  Play,
-  Plus,
-  X,
   Sliders,
 } from 'lucide-react';
 import { useDashboard } from '@/lib/DashboardContext';
@@ -20,6 +16,7 @@ import { TopHeader } from '@/components/layout/TopHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { CapsuleProgress } from '@/components/ui/CapsuleProgress';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { ModalWrapper } from '@/components/ui/ModalWrapper';
 
 export default function OverviewPage() {
   const {
@@ -35,12 +32,10 @@ export default function OverviewPage() {
     journalEntries,
   } = useDashboard();
 
-  // Budget Modal state
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [editCategory, setEditCategory] = useState('makan');
   const [editLimit, setEditLimit] = useState('2000000');
 
-  // Calculations
   const totalBalance = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
   
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -74,22 +69,20 @@ export default function OverviewPage() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Top Header */}
+    <div className="space-y-6 sm:space-y-8 animate-fade-in">
       <TopHeader
         title="Dashboard Overview"
         subtitle="Satu tempat untuk mengatur finansial, belajar data science, eksperimen model, & daily mood."
         badgeText="Active Workspace"
       />
 
-      {/* Row 1: Hero Contrast Stat Cards (Dark, Lime, White) */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Card 1: Total Saldo (Dark Surface #111111) */}
+      {/* Row 1: Stat Cards */}
+      <section className="stat-grid">
         <StatCard
           variant="dark"
           title="Total Saldo Kas"
           value={`Rp ${totalBalance.toLocaleString('id-ID')}`}
-          subtitle={`Tersebar di ${wallets.length} rekening/e-wallet (Jago, BCA, GoPay)`}
+          subtitle={`Tersebar di ${wallets.length} rekening/e-wallet`}
           badgeText="Active Net Worth"
           badgeType="lime"
           icon={<Wallet className="w-5 h-5" />}
@@ -103,7 +96,6 @@ export default function OverviewPage() {
           }
         />
 
-        {/* Card 2: Pengeluaran Bulan Ini (Lime Accent #E4FF6B) */}
         <StatCard
           variant="lime"
           title="Pengeluaran Bulan Ini"
@@ -114,7 +106,7 @@ export default function OverviewPage() {
           icon={<TrendingUp className="w-5 h-5" />}
           actionButton={
             <div className="flex items-center justify-between text-xs font-bold text-black/80">
-              <span>Sisa Budget: Rp {Math.max(totalBudgetLimit - totalBudgetSpent, 0).toLocaleString('id-ID')}</span>
+              <span>Sisa: Rp {Math.max(totalBudgetLimit - totalBudgetSpent, 0).toLocaleString('id-ID')}</span>
               <button
                 type="button"
                 onClick={() => setIsBudgetModalOpen(true)}
@@ -126,7 +118,6 @@ export default function OverviewPage() {
           }
         />
 
-        {/* Card 3: Study & Focus Metrics (White Surface) */}
         <StatCard
           variant="white"
           title="Daily Study & Target"
@@ -146,17 +137,17 @@ export default function OverviewPage() {
         />
       </section>
 
-      {/* Row 2: 4-Module Interactive Hub Grid */}
+      {/* Row 2: Finance Hub & DS Corner */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Col Left (7 cols): Finance Budget Capsules & Quick Summary */}
-        <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-black/6 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-5">
+        {/* Finance Budget Capsules */}
+        <div className="lg:col-span-7 card-base flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
             <div>
-              <h2 className="text-lg font-extrabold text-[#111111] flex items-center gap-2">
+              <h2 className="heading-sm flex items-center gap-2">
                 <Wallet className="w-5 h-5" />
                 <span>Budget Monitor & Capsule Sliders</span>
               </h2>
-              <p className="text-xs text-[#7F847C] font-medium">
+              <p className="section-subtitle">
                 Visualisasi pemakaian budget per kategori bulan berjalan
               </p>
             </div>
@@ -164,20 +155,19 @@ export default function OverviewPage() {
               <button
                 type="button"
                 onClick={() => setIsBudgetModalOpen(true)}
-                className="text-xs font-bold text-[#111111] bg-[#EDEFEB] px-3 py-1.5 rounded-full hover:bg-[#111111] hover:text-[#E4FF6B] transition-colors"
+                className="btn-pill btn-pill-neutral"
               >
                 Atur Limit
               </button>
               <Link
                 href="/finance"
-                className="text-xs font-bold text-[#111111] bg-[#EDEFEB] px-3 py-1.5 rounded-full hover:bg-[#111111] hover:text-[#E4FF6B] transition-colors"
+                className="btn-pill btn-pill-neutral"
               >
                 Finance Hub
               </Link>
             </div>
           </div>
 
-          {/* Capsule Sliders in a Row */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 py-3 border-y border-black/5">
             {budgets.slice(0, 6).map((b) => {
               const spent =
@@ -197,8 +187,7 @@ export default function OverviewPage() {
             })}
           </div>
 
-          {/* Bottom Card CTA */}
-          <div className="mt-4 flex items-center justify-between text-xs text-[#7F847C]">
+          <div className="mt-4 flex items-center justify-between text-xs text-[#7F847C] flex-wrap gap-2">
             <span>Total Limit: Rp {totalBudgetLimit.toLocaleString('id-ID')}</span>
             <Link href="/finance" className="font-bold text-[#111111] hover:underline">
               Kelola Pengeluaran & Transaksi →
@@ -206,25 +195,22 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Col Right (5 cols): Machine Learning & Data Science Corner Preview */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-black/6 shadow-xs flex flex-col justify-between">
+        {/* Machine Learning & DS Corner */}
+        <div className="lg:col-span-5 card-base flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-extrabold text-[#111111] flex items-center gap-2">
+              <h2 className="heading-sm flex items-center gap-2">
                 <LineChart className="w-5 h-5" />
                 <span>DS & ML Tracker</span>
               </h2>
-              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#111111] text-[#E4FF6B]">
-                Playground
-              </span>
+              <span className="badge badge-dark">Playground</span>
             </div>
-            <p className="text-xs text-[#7F847C] mb-4">
+            <p className="section-subtitle mb-4">
               Dataset EDA, Python snippet vault, dan histori run model machine learning.
             </p>
 
-            {/* Latest Experiment mini card */}
             {latestExperiment ? (
-              <div className="p-4 rounded-2xl bg-[#EDEFEB]/60 border border-black/5 space-y-2">
+              <div className="card-muted space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#111111]">{latestExperiment.title}</span>
                   <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
@@ -247,7 +233,7 @@ export default function OverviewPage() {
                 </div>
               </div>
             ) : (
-              <div className="p-6 rounded-2xl bg-[#EDEFEB]/40 text-center text-xs text-[#7F847C]">
+              <div className="p-6 rounded-2xl bg-[#EDEFEB]/40 text-center section-subtitle">
                 Belum ada eksperimen ML tercatat.
               </div>
             )}
@@ -266,11 +252,11 @@ export default function OverviewPage() {
 
       {/* Row 3: Study Task Hub & Daily Mood Log */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Study sprint task preview (7 cols) */}
-        <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-black/6 shadow-xs flex flex-col justify-between">
+        {/* Study sprint task preview */}
+        <div className="lg:col-span-7 card-base flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-extrabold text-[#111111] flex items-center gap-2">
+              <h2 className="heading-sm flex items-center gap-2">
                 <GraduationCap className="w-5 h-5" />
                 <span>Assignment Board & Deadlines</span>
               </h2>
@@ -304,7 +290,7 @@ export default function OverviewPage() {
               ))}
 
               {pendingAssignments.length === 0 && (
-                <div className="py-6 text-center text-xs text-[#7F847C]">
+                <div className="py-6 text-center section-subtitle">
                   Semua tugas telah diselesaikan! 🎉
                 </div>
               )}
@@ -318,26 +304,24 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Cozy Mood Log preview (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-black/6 shadow-xs flex flex-col justify-between">
+        {/* Cozy Mood Log preview */}
+        <div className="lg:col-span-5 card-base flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-extrabold text-[#111111] flex items-center gap-2">
+              <h2 className="heading-sm flex items-center gap-2">
                 <BookHeart className="w-5 h-5" />
                 <span>Today's Mindful Reflection</span>
               </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EDEFEB] text-[#111111]">
-                Cozy Space
-              </span>
+              <span className="badge badge-neutral">Cozy Space</span>
             </div>
 
             {todayJournal ? (
-              <div className="p-4 rounded-2xl bg-[#EDEFEB]/60 border border-black/5 space-y-2">
+              <div className="card-muted space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-2xl">
                     {todayJournal.mood_score === 5 ? '🔥' : todayJournal.mood_score >= 4 ? '⚡' : '🙂'}
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#111111] text-[#E4FF6B] capitalize">
+                  <span className="badge badge-dark capitalize">
                     {todayJournal.mood_tag}
                   </span>
                 </div>
@@ -347,7 +331,7 @@ export default function OverviewPage() {
                 <div className="text-[10px] text-[#7F847C]">{todayJournal.date}</div>
               </div>
             ) : (
-              <div className="p-6 rounded-2xl bg-[#EDEFEB]/40 text-center text-xs text-[#7F847C]">
+              <div className="p-6 rounded-2xl bg-[#EDEFEB]/40 text-center section-subtitle">
                 Belum ada refleksi yang dicatat hari ini.
               </div>
             )}
@@ -362,97 +346,81 @@ export default function OverviewPage() {
       </section>
 
       {/* Edit Budget Modal */}
-      {isBudgetModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-black/5 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-2xl bg-[#111111] text-[#E4FF6B]">
-                  <Sliders className="w-4 h-4" />
-                </span>
-                <h3 className="text-base font-extrabold text-[#111111]">Atur Limit Budget Kategori</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsBudgetModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-[#EDEFEB]"
-              >
-                <X className="w-4 h-4 text-[#7F847C]" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveBudget} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Pilih Kategori</label>
-                <CustomSelect
-                  value={editCategory}
-                  onChange={(selected) => {
-                    setEditCategory(selected);
-                    const currentBudget = budgets.find((b) => b.category.toLowerCase() === selected.toLowerCase());
-                    if (currentBudget) {
-                      setEditLimit(String(currentBudget.limit_amount));
-                    }
-                  }}
-                  options={categories
-                    .filter((c) => c.type === 'expense' || c.type === 'both')
-                    .map((c) => ({
-                      value: c.name.toLowerCase(),
-                      label: c.name,
-                      color: c.color,
-                    }))}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Limit Bulanan (Rp)</label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="any"
-                  placeholder="Contoh: 2000000"
-                  value={editLimit}
-                  onChange={(e) => setEditLimit(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                />
-              </div>
-
-              {/* Quick Preset Buttons */}
-              <div>
-                <span className="block text-[10px] font-bold text-[#7F847C] uppercase mb-1.5">Preset Cepat:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {['500000', '1000000', '1500000', '2000000', '3000000'].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setEditLimit(val)}
-                      className="px-2.5 py-1 rounded-xl bg-[#EDEFEB] hover:bg-[#111111] hover:text-[#E4FF6B] text-[11px] font-bold text-[#111111] transition-all"
-                    >
-                      {parseInt(val) >= 1000000 ? `${parseInt(val) / 1000000} Juta` : `${parseInt(val) / 1000}k`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
-                <button
-                  type="button"
-                  onClick={() => setIsBudgetModalOpen(false)}
-                  className="px-4 py-2 rounded-2xl bg-[#EDEFEB] text-xs font-bold text-[#111111]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold"
-                >
-                  Simpan Limit
-                </button>
-              </div>
-            </form>
+      <ModalWrapper
+        isOpen={isBudgetModalOpen}
+        onClose={() => setIsBudgetModalOpen(false)}
+        title="Atur Limit Budget Kategori"
+        icon={<Sliders className="w-4 h-4" />}
+      >
+        <form onSubmit={handleSaveBudget} className="space-y-4">
+          <div>
+            <label className="label-field">Pilih Kategori</label>
+            <CustomSelect
+              value={editCategory}
+              onChange={(selected) => {
+                setEditCategory(selected);
+                const currentBudget = budgets.find((b) => b.category.toLowerCase() === selected.toLowerCase());
+                if (currentBudget) {
+                  setEditLimit(String(currentBudget.limit_amount));
+                }
+              }}
+              options={categories
+                .filter((c) => c.type === 'expense' || c.type === 'both')
+                .map((c) => ({
+                  value: c.name.toLowerCase(),
+                  label: c.name,
+                  color: c.color,
+                }))}
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="label-field">Limit Bulanan (Rp)</label>
+            <input
+              type="number"
+              required
+              min="0"
+              step="any"
+              placeholder="Contoh: 2000000"
+              value={editLimit}
+              onChange={(e) => setEditLimit(e.target.value)}
+              className="input-field"
+            />
+          </div>
+
+          <div>
+            <span className="label-field mb-1.5">Preset Cepat:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {['500000', '1000000', '1500000', '2000000', '3000000'].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setEditLimit(val)}
+                  className="btn-pill btn-pill-neutral !text-[11px]"
+                >
+                  {parseInt(val) >= 1000000 ? `${parseInt(val) / 1000000} Juta` : `${parseInt(val) / 1000}k`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+            <button
+              type="button"
+              onClick={() => setIsBudgetModalOpen(false)}
+              className="btn-secondary"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              className="btn-primary"
+            >
+              Simpan Limit
+            </button>
+          </div>
+        </form>
+      </ModalWrapper>
     </div>
   );
 }

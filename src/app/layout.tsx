@@ -25,15 +25,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" className={`h-full ${plusJakartaSans.variable}`} suppressHydrationWarning>
-      <body className="min-h-full flex flex-row bg-[#EDEFEB] text-[#111111] font-sans antialiased selection:bg-[#E4FF6B] selection:text-[#111111] tabular-nums">
+      <body className="min-h-full flex flex-col md:flex-row bg-[#EDEFEB] text-[#111111] font-sans antialiased selection:bg-[#E4FF6B] selection:text-[#111111] tabular-nums">
         <ThemeProvider>
           <AuthGuard>
             <DashboardProvider>
-              {/* Dark Icon-only Sidebar */}
+              {/* Sidebar: vertical on desktop, bottom navigation bar on mobile */}
               <Sidebar />
 
               {/* Main App Canvas */}
-              <main className="flex-1 min-w-0 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 flex flex-col">
+              <main className="flex-1 min-w-0 overflow-y-auto min-h-screen pb-24 md:pb-8 p-4 sm:p-6 lg:p-8 flex flex-col">
                 <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col">
                   {children}
                 </div>
