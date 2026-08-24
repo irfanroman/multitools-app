@@ -7,6 +7,13 @@ export interface Wallet {
   color?: string;
 }
 
+export interface CategoryItem {
+  id: string;
+  name: string;
+  type: 'expense' | 'income' | 'both';
+  color?: string;
+}
+
 export interface Transaction {
   id: string;
   title: string;

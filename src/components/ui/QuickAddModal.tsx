@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { X, Wallet, GraduationCap, LineChart, BookHeart, Sparkles } from 'lucide-react';
 import { useDashboard } from '@/lib/DashboardContext';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface QuickAddModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 }) => {
   const {
     wallets,
+    categories,
     addTransaction,
     addNote,
     addFlashcard,
@@ -34,6 +36,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
   const [txCategory, setTxCategory] = useState('makan');
   const [txPaymentMethod, setTxPaymentMethod] = useState(wallets[0]?.name || 'Bank Jago');
+  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [txNotes, setTxNotes] = useState('');
 
   // Note form state
@@ -68,7 +71,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       type: txType,
       category: txType === 'income' ? (txCategory || 'gaji/freelance') : txCategory,
       payment_method: txPaymentMethod,
-      date: new Date().toISOString().split('T')[0],
+      date: txDate || new Date().toISOString().split('T')[0],
       notes: txNotes || undefined,
     });
     onClose();
@@ -238,63 +241,64 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
-                <select
-                  value={txPaymentMethod}
-                  onChange={(e) => setTxPaymentMethod(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                >
-                  {wallets.map((w) => (
-                    <option key={w.id} value={w.name}>
-                      {w.name} (Rp {w.balance.toLocaleString('id-ID')})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {txType === 'expense' ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
-                  <select
-                    value={txCategory}
-                    onChange={(e) => setTxCategory(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                  >
-                    <option value="makan">🍜 Makanan & Minuman</option>
-                    <option value="kos">🏠 Sewa Kos / Tempat</option>
-                    <option value="transport">🛵 Transportasi</option>
-                    <option value="kuliah">🎓 Kuliah & Tools DS</option>
-                    <option value="hiburan">☕ Hiburan & Nongkrong</option>
-                    <option value="belanja">🛍️ Belanja</option>
-                    <option value="lainnya">📦 Lainnya</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Catatan (Opsional)</label>
-                  <input
-                    type="text"
-                    placeholder="Catatan tambahan"
-                    value={txNotes}
-                    onChange={(e) => setTxNotes(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Catatan / Sumber (Opsional)</label>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tanggal Transaksi</label>
                 <input
-                  type="text"
-                  placeholder="Contoh: Gaji freelance, transfer orang tua, beasiswa"
-                  value={txNotes}
-                  onChange={(e) => setTxNotes(e.target.value)}
+                  type="date"
+                  required
+                  value={txDate}
+                  onChange={(e) => setTxDate(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
                 />
               </div>
-            )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
+                <CustomSelect
+                  value={txPaymentMethod}
+                  onChange={(v) => setTxPaymentMethod(v)}
+                  options={wallets.map((w) => ({
+                    value: w.name,
+                    label: w.name,
+                    sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                    color: w.color,
+                  }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
+                <CustomSelect
+                  value={txCategory}
+                  onChange={(v) => setTxCategory(v)}
+                  options={categories
+                    .filter((c) =>
+                      txType === 'expense'
+                        ? c.type === 'expense' || c.type === 'both'
+                        : c.type === 'income' || c.type === 'both'
+                    )
+                    .map((c) => ({
+                      value: c.name.toLowerCase(),
+                      label: c.name,
+                      color: c.color,
+                    }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">
+                {txType === 'expense' ? 'Catatan (Opsional)' : 'Catatan / Sumber (Opsional)'}
+              </label>
+              <input
+                type="text"
+                placeholder={txType === 'expense' ? 'Catatan tambahan' : 'Contoh: Gaji freelance, transfer, beasiswa'}
+                value={txNotes}
+                onChange={(e) => setTxNotes(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+              />
+            </div>
 
             <button
               type="submit"
@@ -434,15 +438,15 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Prioritas</label>
-                <select
+                <CustomSelect
                   value={assPriority}
-                  onChange={(e) => setAssPriority(e.target.value as any)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                >
-                  <option value="low">Rendah (Low)</option>
-                  <option value="medium">Sedang (Medium)</option>
-                  <option value="high">Tinggi (High / Urgent)</option>
-                </select>
+                  onChange={(v) => setAssPriority(v as any)}
+                  options={[
+                    { value: 'low', label: 'Rendah (Low)' },
+                    { value: 'medium', label: 'Sedang (Medium)' },
+                    { value: 'high', label: 'Tinggi (High / Urgent)' },
+                  ]}
+                />
               </div>
             </div>
 
@@ -500,17 +504,17 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Mood Tag</label>
-              <select
+              <CustomSelect
                 value={journalMoodTag}
-                onChange={(e) => setJournalMoodTag(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-              >
-                <option value="productive">🔥 Sangat Produktif</option>
-                <option value="energized">⚡ Berenergi</option>
-                <option value="chill">🌿 Santai & Cozy</option>
-                <option value="tired">😴 Lelah / Butuh Istirahat</option>
-                <option value="overwhelmed">🤯 Overwhelmed</option>
-              </select>
+                onChange={(v) => setJournalMoodTag(v)}
+                options={[
+                  { value: 'productive', label: 'Sangat Produktif' },
+                  { value: 'energized', label: 'Berenergi' },
+                  { value: 'chill', label: 'Santai & Cozy' },
+                  { value: 'tired', label: 'Lelah / Butuh Istirahat' },
+                  { value: 'overwhelmed', label: 'Overwhelmed' },
+                ]}
+              />
             </div>
 
             <div>

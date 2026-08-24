@@ -19,8 +19,10 @@ import {
   ArrowDownRight,
   Pencil,
   X,
+  Tag,
 } from 'lucide-react';
-import { Transaction } from '@/lib/types';
+import { Transaction, CategoryItem } from '@/lib/types';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 import {
   ResponsiveContainer,
   PieChart,
@@ -54,6 +56,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 export default function FinancePage() {
   const {
     wallets,
+    categories,
     transactions,
     budgets,
     deleteTransaction,
@@ -62,6 +65,8 @@ export default function FinancePage() {
     updateWallet,
     deleteWallet,
     updateBudget,
+    addCategory,
+    deleteCategory,
     streaks,
   } = useDashboard();
 
@@ -70,6 +75,12 @@ export default function FinancePage() {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterWallet, setFilterWallet] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Add Category modal state
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatType, setNewCatType] = useState<'expense' | 'income' | 'both'>('expense');
+  const [newCatColor, setNewCatColor] = useState('#FF8A00');
 
   // Edit Transaction modal state
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -140,12 +151,15 @@ export default function FinancePage() {
         map[t.category] = (map[t.category] || 0) + t.amount;
       });
 
-    return Object.entries(map).map(([name, value]) => ({
-      name,
-      value,
-      color: CATEGORY_COLORS[name.toLowerCase()] || '#7F847C',
-    }));
-  }, [currentMonthTx]);
+    return Object.entries(map).map(([name, value]) => {
+      const foundCat = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+      return {
+        name,
+        value,
+        color: foundCat?.color || CATEGORY_COLORS[name.toLowerCase()] || '#7F847C',
+      };
+    });
+  }, [currentMonthTx, categories]);
 
   // Area Chart Data (Daily Cash Flow Trend)
   const areaData = useMemo(() => {
@@ -221,26 +235,25 @@ export default function FinancePage() {
     setIsBudgetModalOpen(false);
   };
 
-  const standardExpenseCategories = ['makan', 'kos', 'transport', 'kuliah', 'hiburan', 'belanja'];
-  const standardIncomeCategories = ['gaji/freelance', 'uang jajan'];
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    await addCategory({
+      name: newCatName.trim(),
+      type: newCatType,
+      color: newCatColor,
+    });
+    setIsCategoryModalOpen(false);
+    setNewCatName('');
+  };
 
   const handleOpenEditTx = (t: Transaction) => {
     setEditingTx(t);
     setEditTxTitle(t.title);
     setEditTxAmount(String(t.amount));
     setEditTxType(t.type);
-
-    const isStdExpense = t.type === 'expense' && standardExpenseCategories.includes(t.category.toLowerCase());
-    const isStdIncome = t.type === 'income' && standardIncomeCategories.includes(t.category.toLowerCase());
-
-    if (isStdExpense || isStdIncome) {
-      setEditTxCategory(t.category.toLowerCase());
-      setEditTxCustomCategory('');
-    } else {
-      setEditTxCategory('lainnya');
-      setEditTxCustomCategory(t.category.toLowerCase() === 'lainnya' ? '' : t.category);
-    }
-
+    setEditTxCategory(t.category.toLowerCase());
+    setEditTxCustomCategory('');
     setEditTxPaymentMethod(t.payment_method);
     setEditTxDate(t.date || new Date().toISOString().split('T')[0]);
     setEditTxNotes(t.notes || '');
@@ -252,8 +265,8 @@ export default function FinancePage() {
     if (!editingTx || !editTxTitle || !editTxAmount) return;
 
     let finalCategory = editTxCategory;
-    if (editTxCategory === 'lainnya') {
-      finalCategory = editTxCustomCategory.trim() || 'lainnya';
+    if (editTxCategory === 'lainnya' && editTxCustomCategory.trim()) {
+      finalCategory = editTxCustomCategory.trim();
     }
 
     await updateTransaction(editingTx.id, {
@@ -457,12 +470,20 @@ export default function FinancePage() {
               </h3>
               <p className="text-xs text-[#7F847C]">Limit & pemakaian per kategori</p>
             </div>
-            <button
-              onClick={() => setIsBudgetModalOpen(true)}
-              className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#111111] text-[#E4FF6B] hover:bg-[#222222] transition-colors"
-            >
-              Edit Budget
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#EDEFEB] text-[#111111] hover:bg-[#111111] hover:text-[#E4FF6B] transition-colors flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Tambah Kategori
+              </button>
+              <button
+                onClick={() => setIsBudgetModalOpen(true)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#111111] text-[#E4FF6B] hover:bg-[#222222] transition-colors"
+              >
+                Edit Budget
+              </button>
+            </div>
           </div>
 
           {/* Horizontal Capsule list */}
@@ -570,38 +591,57 @@ export default function FinancePage() {
               placeholder="Cari transaksi..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-3.5 py-1.5 rounded-full bg-[#EDEFEB] text-xs border border-black/5 focus:outline-none focus:ring-1 focus:ring-[#111111]"
+              className="px-3.5 py-2 rounded-2xl bg-[#EDEFEB]/60 text-xs font-semibold border border-black/10 focus:outline-none focus:ring-2 focus:ring-[#111111] w-36 sm:w-44"
             />
 
             {/* Type Filter */}
-            <select
+            <CustomSelect
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value as any)}
-              className="px-3 py-1.5 rounded-full bg-[#EDEFEB] text-xs font-semibold border border-black/5 focus:outline-none"
-            >
-              <option value="all">Semua Tipe</option>
-              <option value="income">Pemasukan (+)</option>
-              <option value="expense">Pengeluaran (-)</option>
-            </select>
+              onChange={(v) => setFilterType(v as any)}
+              className="w-32"
+              options={[
+                { value: 'all', label: 'Semua Tipe' },
+                { value: 'income', label: 'Pemasukan (+)' },
+                { value: 'expense', label: 'Pengeluaran (-)' },
+              ]}
+            />
+
+            {/* Category Filter */}
+            <CustomSelect
+              value={filterCategory}
+              onChange={(v) => setFilterCategory(v)}
+              className="w-36 sm:w-40"
+              placeholder="Semua Kategori"
+              options={[
+                { value: 'all', label: 'Semua Kategori' },
+                ...categories.map((c) => ({
+                  value: c.name.toLowerCase(),
+                  label: c.name,
+                  color: c.color,
+                })),
+              ]}
+            />
 
             {/* Wallet Filter */}
-            <select
+            <CustomSelect
               value={filterWallet}
-              onChange={(e) => setFilterWallet(e.target.value)}
-              className="px-3 py-1.5 rounded-full bg-[#EDEFEB] text-xs font-semibold border border-black/5 focus:outline-none"
-            >
-              <option value="all">Semua Metode</option>
-              {wallets.map((w) => (
-                <option key={w.id} value={w.name}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setFilterWallet(v)}
+              className="w-36 sm:w-40"
+              placeholder="Semua Rekening"
+              options={[
+                { value: 'all', label: 'Semua Metode' },
+                ...wallets.map((w) => ({
+                  value: w.name,
+                  label: w.name,
+                  color: w.color,
+                })),
+              ]}
+            />
 
             {/* CTA Button */}
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#111111] text-[#E4FF6B] text-xs font-bold hover:bg-[#222222] transition-colors shadow-xs"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold hover:bg-[#222222] transition-colors shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tambah Transaksi</span>
@@ -705,7 +745,22 @@ export default function FinancePage() {
       {isWalletModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95">
-            <h3 className="text-lg font-extrabold text-[#111111] mb-4">Tambah Metode / Rekening Baru</h3>
+            <div className="flex items-center justify-between pb-3 border-b border-black/5 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-2xl bg-[#111111] text-[#E4FF6B]">
+                  <CreditCard className="w-4 h-4" />
+                </span>
+                <h3 className="text-base font-extrabold text-[#111111]">Tambah Rekening / Dompet Baru</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWalletModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-[#EDEFEB] text-[#7F847C]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
             <form onSubmit={handleCreateWallet} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Nama Rekening / Dompet</label>
@@ -722,15 +777,15 @@ export default function FinancePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tipe</label>
-                  <select
+                  <CustomSelect
                     value={newWalletType}
-                    onChange={(e) => setNewWalletType(e.target.value as any)}
-                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none"
-                  >
-                    <option value="bank">Bank</option>
-                    <option value="ewallet">E-Wallet</option>
-                    <option value="cash">Tunai (Cash)</option>
-                  </select>
+                    onChange={(v) => setNewWalletType(v as any)}
+                    options={[
+                      { value: 'bank', label: 'Bank' },
+                      { value: 'ewallet', label: 'E-Wallet' },
+                      { value: 'cash', label: 'Tunai (Cash)' },
+                    ]}
+                  />
                 </div>
 
                 <div>
@@ -741,14 +796,14 @@ export default function FinancePage() {
                     placeholder="0"
                     value={newWalletBalance}
                     onChange={(e) => setNewWalletBalance(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none"
+                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Warna Label</label>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap pt-1">
                   {['#FF5E00', '#0060AF', '#00AED6', '#10B981', '#9333EA', '#111111'].map((c) => (
                     <button
                       key={c}
@@ -763,7 +818,7 @@ export default function FinancePage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
                 <button
                   type="button"
                   onClick={() => setIsWalletModalOpen(false)}
@@ -773,9 +828,92 @@ export default function FinancePage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold"
+                  className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold shadow-sm hover:opacity-90"
                 >
                   Simpan Dompet
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Category Modal */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-black/5 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-2xl bg-[#111111] text-[#E4FF6B]">
+                  <Tag className="w-4 h-4" />
+                </span>
+                <h3 className="text-base font-extrabold text-[#111111]">Tambah Kategori Baru</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCategoryModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-[#EDEFEB] text-[#7F847C]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCategory} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Nama Kategori</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Investasi, Listrik, Donasi, Skin Care"
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tipe Kategori</label>
+                <CustomSelect
+                  value={newCatType}
+                  onChange={(v) => setNewCatType(v as any)}
+                  options={[
+                    { value: 'expense', label: 'Pengeluaran (Expense)' },
+                    { value: 'income', label: 'Pemasukan (Income)' },
+                    { value: 'both', label: 'Keduanya (Pengeluaran & Pemasukan)' },
+                  ]}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Warna Label</label>
+                <div className="flex gap-2 flex-wrap pt-1">
+                  {['#FF8A00', '#0060AF', '#00AED6', '#10B981', '#9333EA', '#EC4899', '#EAB308', '#111111', '#7F847C'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setNewCatColor(c)}
+                      className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                        newCatColor === c ? 'scale-110 border-black' : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(false)}
+                  className="px-4 py-2 rounded-2xl bg-[#EDEFEB] text-xs font-bold text-[#111111]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold shadow-sm hover:opacity-90"
+                >
+                  Simpan Kategori
                 </button>
               </div>
             </form>
@@ -787,23 +925,41 @@ export default function FinancePage() {
       {isBudgetModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95">
-            <h3 className="text-lg font-extrabold text-[#111111] mb-4">Atur Limit Budget Bulanan</h3>
+            <div className="flex items-center justify-between pb-3 border-b border-black/5 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-2xl bg-[#111111] text-[#E4FF6B]">
+                  <Wallet className="w-4 h-4" />
+                </span>
+                <h3 className="text-base font-extrabold text-[#111111]">Atur Limit Budget Bulanan</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBudgetModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-[#EDEFEB] text-[#7F847C]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
             <form onSubmit={handleSaveBudget} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
-                <select
+                <CustomSelect
                   value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none"
-                >
-                  <option value="makan">Makan & Minum</option>
-                  <option value="kos">Sewa Kos</option>
-                  <option value="transport">Transportasi</option>
-                  <option value="kuliah">Kuliah & Tools DS</option>
-                  <option value="hiburan">Hiburan & Nongkrong</option>
-                  <option value="belanja">Belanja</option>
-                  <option value="lainnya">Lainnya</option>
-                </select>
+                  onChange={(v) => setEditCategory(v)}
+                  onAddNew={() => {
+                    setIsBudgetModalOpen(false);
+                    setIsCategoryModalOpen(true);
+                  }}
+                  addNewLabel="+ Tambah Kategori Baru"
+                  options={categories
+                    .filter((c) => c.type === 'expense' || c.type === 'both')
+                    .map((c) => ({
+                      value: c.name.toLowerCase(),
+                      label: c.name,
+                      color: c.color,
+                    }))}
+                />
               </div>
 
               <div>
@@ -811,15 +967,16 @@ export default function FinancePage() {
                 <input
                   type="number"
                   required
-                  min="10000"
-                  step="50000"
+                  min="0"
+                  step="any"
+                  placeholder="Contoh: 2000000"
                   value={editLimit}
                   onChange={(e) => setEditLimit(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none"
+                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-black/5">
                 <button
                   type="button"
                   onClick={() => setIsBudgetModalOpen(false)}
@@ -829,7 +986,7 @@ export default function FinancePage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold"
+                  className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold shadow-sm hover:opacity-90"
                 >
                   Simpan Limit
                 </button>
@@ -838,11 +995,27 @@ export default function FinancePage() {
           </div>
         </div>
       )}
+
       {/* Edit Wallet Modal */}
       {editingWallet && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95">
-            <h3 className="text-lg font-extrabold text-[#111111] mb-4">Edit Rekening / Saldo Dompet</h3>
+            <div className="flex items-center justify-between pb-3 border-b border-black/5 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-2xl bg-[#111111] text-[#E4FF6B]">
+                  <CreditCard className="w-4 h-4" />
+                </span>
+                <h3 className="text-base font-extrabold text-[#111111]">Edit Rekening / Saldo Dompet</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingWallet(null)}
+                className="p-1.5 rounded-full hover:bg-[#EDEFEB] text-[#7F847C]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -874,11 +1047,11 @@ export default function FinancePage() {
                   required
                   value={editWalletBalance}
                   onChange={(e) => setEditWalletBalance(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none"
+                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
                 />
               </div>
 
-              <div className="flex justify-between items-center pt-2">
+              <div className="flex justify-between items-center pt-2 border-t border-black/5">
                 <button
                   type="button"
                   onClick={async () => {
@@ -887,9 +1060,9 @@ export default function FinancePage() {
                       setEditingWallet(null);
                     }
                   }}
-                  className="text-xs text-rose-500 font-bold hover:underline"
+                  className="text-xs text-rose-500 font-bold hover:underline flex items-center gap-1"
                 >
-                  Hapus Rekening
+                  <Trash2 className="w-3.5 h-3.5" /> Hapus Rekening
                 </button>
 
                 <div className="flex gap-2">
@@ -902,7 +1075,7 @@ export default function FinancePage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold"
+                    className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold shadow-sm hover:opacity-90"
                   >
                     Simpan Saldo
                   </button>
@@ -940,9 +1113,6 @@ export default function FinancePage() {
                   type="button"
                   onClick={() => {
                     setEditTxType('expense');
-                    if (['gaji/freelance', 'uang jajan'].includes(editTxCategory)) {
-                      setEditTxCategory('makan');
-                    }
                   }}
                   className={`py-2 rounded-xl text-xs font-bold transition-all ${
                     editTxType === 'expense'
@@ -956,9 +1126,6 @@ export default function FinancePage() {
                   type="button"
                   onClick={() => {
                     setEditTxType('income');
-                    if (['makan', 'kos', 'transport', 'kuliah', 'hiburan', 'belanja'].includes(editTxCategory)) {
-                      setEditTxCategory('gaji/freelance');
-                    }
                   }}
                   className={`py-2 rounded-xl text-xs font-bold transition-all ${
                     editTxType === 'income'
@@ -999,20 +1166,16 @@ export default function FinancePage() {
 
                 <div>
                   <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
-                  <select
+                  <CustomSelect
                     value={editTxPaymentMethod}
-                    onChange={(e) => setEditTxPaymentMethod(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                  >
-                    {wallets.map((w) => (
-                      <option key={w.id} value={w.name}>
-                        {w.name} (Rp {w.balance.toLocaleString('id-ID')})
-                      </option>
-                    ))}
-                    {!wallets.some((w) => w.name.toLowerCase() === editTxPaymentMethod.toLowerCase()) && (
-                      <option value={editTxPaymentMethod}>{editTxPaymentMethod}</option>
-                    )}
-                  </select>
+                    onChange={(v) => setEditTxPaymentMethod(v)}
+                    options={wallets.map((w) => ({
+                      value: w.name,
+                      label: w.name,
+                      sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                      color: w.color,
+                    }))}
+                  />
                 </div>
               </div>
 
@@ -1020,31 +1183,23 @@ export default function FinancePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
-                  {editTxType === 'expense' ? (
-                    <select
-                      value={editTxCategory}
-                      onChange={(e) => setEditTxCategory(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                    >
-                      <option value="makan">🍜 Makanan & Minuman</option>
-                      <option value="kos">🏠 Sewa Kos / Tempat</option>
-                      <option value="transport">🛵 Transportasi</option>
-                      <option value="kuliah">🎓 Kuliah & Tools DS</option>
-                      <option value="hiburan">☕ Hiburan & Nongkrong</option>
-                      <option value="belanja">🛍️ Belanja</option>
-                      <option value="lainnya">📦 Lainnya / Kustom</option>
-                    </select>
-                  ) : (
-                    <select
-                      value={editTxCategory}
-                      onChange={(e) => setEditTxCategory(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                    >
-                      <option value="gaji/freelance">💼 Gaji & Freelance</option>
-                      <option value="uang jajan">💰 Uang Jajan / Transfer</option>
-                      <option value="lainnya">📦 Lainnya / Kustom</option>
-                    </select>
-                  )}
+                  <CustomSelect
+                    value={editTxCategory}
+                    onChange={(v) => setEditTxCategory(v)}
+                    onAddNew={() => setIsCategoryModalOpen(true)}
+                    addNewLabel="+ Tambah Kategori Baru"
+                    options={categories
+                      .filter((c) =>
+                        editTxType === 'expense'
+                          ? c.type === 'expense' || c.type === 'both'
+                          : c.type === 'income' || c.type === 'both'
+                      )
+                      .map((c) => ({
+                        value: c.name.toLowerCase(),
+                        label: c.name,
+                        color: c.color,
+                      }))}
+                  />
                 </div>
 
                 <div>

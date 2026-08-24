@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, RefreshCw, Calendar } from 'lucide-react';
+import { Plus, RefreshCw, Calendar, Sun, Moon } from 'lucide-react';
 import { useDashboard } from '@/lib/DashboardContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { QuickAddModal } from '@/components/ui/QuickAddModal';
 
 interface TopHeaderProps {
@@ -20,6 +21,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const { isOnline, refreshAll, isLoading } = useDashboard();
+  const { theme, toggleTheme } = useTheme();
 
   const todayStr = new Intl.DateTimeFormat('id-ID', {
     weekday: 'long',
@@ -62,6 +64,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             className="p-2.5 rounded-2xl bg-white border border-black/5 shadow-2xs hover:bg-[#EDEFEB] text-[#111111] transition-all disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#111111]' : ''}`} />
+          </button>
+
+          {/* Theme Toggle Button (Light/Dark) */}
+          <button
+            onClick={toggleTheme}
+            type="button"
+            title={theme === 'dark' ? 'Ganti ke Mode Terang (Light)' : 'Ganti ke Mode Gelap (Dark)'}
+            className="p-2.5 rounded-2xl bg-white border border-black/5 shadow-2xs hover:bg-[#EDEFEB] text-[#111111] transition-all active:scale-95 group"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-[#E4FF6B] group-hover:rotate-45 transition-transform" />
+            ) : (
+              <Moon className="w-4 h-4 text-[#111111] group-hover:-rotate-12 transition-transform" />
+            )}
           </button>
 
           {/* Quick CTA Black Button */}

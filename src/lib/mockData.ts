@@ -1,5 +1,6 @@
 import {
   Wallet,
+  CategoryItem,
   Transaction,
   Budget,
   Streak,
@@ -18,6 +19,18 @@ export const INITIAL_WALLETS: Wallet[] = [
   { id: 'w2', name: 'BCA', type: 'bank', balance: 0, color: '#0060AF', icon: 'building-2' },
   { id: 'w3', name: 'GoPay', type: 'ewallet', balance: 0, color: '#00AED6', icon: 'wallet' },
   { id: 'w4', name: 'Cash', type: 'cash', balance: 0, color: '#10B981', icon: 'banknote' },
+];
+
+export const INITIAL_CATEGORIES: CategoryItem[] = [
+  { id: 'cat-1', name: 'Makan', type: 'expense', color: '#FF8A00' },
+  { id: 'cat-2', name: 'Kos', type: 'expense', color: '#0060AF' },
+  { id: 'cat-3', name: 'Transport', type: 'expense', color: '#00AED6' },
+  { id: 'cat-4', name: 'Kuliah', type: 'expense', color: '#9333EA' },
+  { id: 'cat-5', name: 'Hiburan', type: 'expense', color: '#EC4899' },
+  { id: 'cat-6', name: 'Belanja', type: 'expense', color: '#EAB308' },
+  { id: 'cat-7', name: 'Gaji/Freelance', type: 'income', color: '#10B981' },
+  { id: 'cat-8', name: 'Uang Jajan', type: 'income', color: '#10B981' },
+  { id: 'cat-9', name: 'Lainnya', type: 'both', color: '#7F847C' },
 ];
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [];

@@ -16,6 +16,20 @@
     --border-subtle: rgba(0, 0, 0, 0.08);
   }
 
+  .dark {
+    --bg-base: #0D0F12;
+    --surface-dark: #070809;
+    --surface-dark-card: #14161A;
+    --surface-dark-border: #23272F;
+    --accent-lime: #E4FF6B;
+    --accent-lime-hover: #d2f347;
+    --surface-light: #16181D;
+    --text-primary: #F3F4F6;
+    --text-inverse: #111111;
+    --text-muted: #9CA3AF;
+    --border-subtle: rgba(255, 255, 255, 0.1);
+  }
+
   body {
     background-color: var(--bg-base);
     color: var(--text-primary);
@@ -23,6 +37,7 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'tnum';
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.012em;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -36,6 +51,129 @@
     font-feature-settings: 'tnum';
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Dark Mode Comprehensive Styling Overrides */
+.dark body {
+  background-color: #0D0F12;
+  color: #F3F4F6;
+}
+
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6 {
+  color: #F3F4F6 !important;
+}
+
+.dark .bg-white {
+  background-color: #16181D !important;
+  color: #F3F4F6 !important;
+}
+
+.dark .bg-\[\#FFFFFF\] {
+  background-color: #16181D !important;
+  color: #F3F4F6 !important;
+}
+
+.dark .bg-\[\#EDEFEB\] {
+  background-color: #1F2228 !important;
+  color: #F3F4F6 !important;
+}
+
+.dark .bg-\[\#EDEFEB\]\/40,
+.dark .bg-\[\#EDEFEB\]\/50,
+.dark .bg-\[\#EDEFEB\]\/60 {
+  background-color: rgba(31, 34, 40, 0.75) !important;
+}
+
+/* In dark mode, standard black text becomes crisp light/white */
+.dark .text-\[\#111111\] {
+  color: #F3F4F6 !important;
+}
+
+.dark .text-\[\#7F847C\] {
+  color: #9CA3AF !important;
+}
+
+.dark .text-black {
+  color: #F3F4F6 !important;
+}
+
+/* ================================================================= */
+/* YELLOW / LIME ACCENT CONTAINERS (#E4FF6B)                         */
+/* Everything inside yellow cards/elements MUST be solid black       */
+/* ================================================================= */
+.bg-\[\#E4FF6B\],
+.dark .bg-\[\#E4FF6B\],
+.bg-\[\#E4FF6B\] *,
+.dark .bg-\[\#E4FF6B\] *,
+.bg-\[\#E4FF6B\] h1,
+.dark .bg-\[\#E4FF6B\] h1,
+.bg-\[\#E4FF6B\] h2,
+.dark .bg-\[\#E4FF6B\] h2,
+.bg-\[\#E4FF6B\] h3,
+.dark .bg-\[\#E4FF6B\] h3,
+.bg-\[\#E4FF6B\] p,
+.dark .bg-\[\#E4FF6B\] p,
+.bg-\[\#E4FF6B\] span,
+.dark .bg-\[\#E4FF6B\] span,
+.bg-\[\#E4FF6B\] div,
+.dark .bg-\[\#E4FF6B\] div,
+.bg-\[\#E4FF6B\] button,
+.dark .bg-\[\#E4FF6B\] button {
+  color: #111111 !important;
+}
+
+.bg-\[\#E4FF6B\] svg,
+.dark .bg-\[\#E4FF6B\] svg,
+.bg-\[\#E4FF6B\] svg path,
+.dark .bg-\[\#E4FF6B\] svg path {
+  color: #111111 !important;
+  stroke: #111111 !important;
+}
+
+/* Specific black pill/badges inside yellow container (e.g. + Cash Inflow) */
+.bg-\[\#E4FF6B\] .bg-\[\#111111\],
+.dark .bg-\[\#E4FF6B\] .bg-\[\#111111\],
+.bg-\[\#E4FF6B\] .bg-black,
+.dark .bg-\[\#E4FF6B\] .bg-black {
+  background-color: #111111 !important;
+  color: #FFFFFF !important;
+}
+
+.bg-\[\#E4FF6B\] .bg-\[\#111111\] *,
+.dark .bg-\[\#E4FF6B\] .bg-\[\#111111\] *,
+.bg-\[\#E4FF6B\] .bg-black *,
+.dark .bg-\[\#E4FF6B\] .bg-black * {
+  color: #FFFFFF !important;
+  stroke: #FFFFFF !important;
+}
+
+.dark .border-black\/5,
+.dark .border-black\/6,
+.dark .border-black\/10,
+.dark .border-black\/20 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark .divide-black\/5 > * + * {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #1F2228 !important;
+  color: #F3F4F6 !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6B7280 !important;
 }
 
 /* Custom scrollbar */
@@ -52,6 +190,13 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.25);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* Glassmorphism helpers */

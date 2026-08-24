@@ -65,7 +65,7 @@ export const StatCard: React.FC<StatCardProps> = ({
                 variant === 'dark'
                   ? 'bg-white/10 text-[#E4FF6B]'
                   : variant === 'lime'
-                  ? 'bg-black/10 text-black'
+                  ? 'bg-black/10 text-[#111111]'
                   : 'bg-[#EDEFEB] text-[#111111]'
               }`}
             >
@@ -74,7 +74,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           )}
           <span
             className={`text-xs font-semibold uppercase tracking-wider ${
-              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-black/70' : 'text-[#7F847C]'
+              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-[#111111]/80 font-bold' : 'text-[#7F847C]'
             }`}
           >
             {title}
@@ -89,11 +89,13 @@ export const StatCard: React.FC<StatCardProps> = ({
       </div>
 
       <div>
-        <div className="text-2xl lg:text-3xl font-extrabold tracking-tight mb-1">{value}</div>
+        <div className={`text-2xl lg:text-3xl font-extrabold tracking-tight mb-1 ${variant === 'lime' ? 'text-[#111111]' : ''}`}>
+          {value}
+        </div>
         {subtitle && (
           <p
             className={`text-xs font-medium ${
-              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-black/70' : 'text-[#7F847C]'
+              variant === 'dark' ? 'text-white/60' : variant === 'lime' ? 'text-[#111111]/80 font-semibold' : 'text-[#7F847C]'
             }`}
           >
             {subtitle}
@@ -101,7 +103,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         )}
       </div>
 
-      {actionButton && <div className="mt-3 pt-3 border-t border-current/10">{actionButton}</div>}
+      {actionButton && <div className="mt-3 pt-3 border-t border-black/10">{actionButton}</div>}
     </div>
   );
 };

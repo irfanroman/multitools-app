@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { supabase } from './supabaseClient';
 import {
   Wallet,
+  CategoryItem,
   Transaction,
   Budget,
   Streak,
@@ -18,6 +19,7 @@ import {
 } from './types';
 import {
   INITIAL_WALLETS,
+  INITIAL_CATEGORIES,
   INITIAL_TRANSACTIONS,
   INITIAL_BUDGETS,
   INITIAL_STREAKS,
@@ -34,6 +36,7 @@ import {
 interface DashboardContextType {
   // Finance
   wallets: Wallet[];
+  categories: CategoryItem[];
   transactions: Transaction[];
   budgets: Budget[];
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<void>;
@@ -43,6 +46,8 @@ interface DashboardContextType {
   updateWallet: (id: string, updates: Partial<Wallet>) => Promise<void>;
   deleteWallet: (id: string) => Promise<void>;
   updateBudget: (category: string, limit_amount: number) => Promise<void>;
+  addCategory: (c: Omit<CategoryItem, 'id'>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
   
   // Streaks
   streaks: Streak[];
@@ -93,9 +98,44 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
 
-  // States
+  // States with localStorage persistence
   const [wallets, setWallets] = useState<Wallet[]>(INITIAL_WALLETS);
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
+  const [categories, setCategories] = useState<CategoryItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedCats = localStorage.getItem('dashboard_custom_categories');
+        if (savedCats) {
+          const parsed = JSON.parse(savedCats);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const merged = [...INITIAL_CATEGORIES];
+            parsed.forEach((c: CategoryItem) => {
+              if (!merged.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
+                merged.push(c);
+              }
+            });
+            return merged;
+          }
+        }
+      } catch (e) {}
+    }
+    return INITIAL_CATEGORIES;
+  });
+
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
+        if (deletedTxRaw) {
+          const deletedIds = JSON.parse(deletedTxRaw);
+          if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+            return INITIAL_TRANSACTIONS.filter((t) => !deletedIds.includes(t.id));
+          }
+        }
+      } catch (e) {}
+    }
+    return INITIAL_TRANSACTIONS;
+  });
+
   const [budgets, setBudgets] = useState<Budget[]>(INITIAL_BUDGETS);
   const [streaks, setStreaks] = useState<Streak[]>(INITIAL_STREAKS);
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
@@ -107,17 +147,59 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [snippets, setSnippets] = useState<CodeSnippet[]>(INITIAL_SNIPPETS);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(INITIAL_JOURNAL_ENTRIES);
 
+  // Load custom categories & deleted tx tracking from localStorage
+  useEffect(() => {
+    try {
+      const savedCats = localStorage.getItem('dashboard_custom_categories');
+      if (savedCats) {
+        const parsed = JSON.parse(savedCats);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const merged = [...INITIAL_CATEGORIES];
+          parsed.forEach((c: CategoryItem) => {
+            if (!merged.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
+              merged.push(c);
+            }
+          });
+          setCategories(merged);
+        }
+      }
+
+      // Filter initial transactions if any were deleted locally
+      const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
+      if (deletedTxRaw) {
+        const deletedIds = JSON.parse(deletedTxRaw);
+        if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+          setTransactions((prev) => prev.filter((t) => !deletedIds.includes(t.id)));
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load initial data from localStorage:', e);
+    }
+  }, []);
+
   // Fetch all from Supabase
   const refreshAll = useCallback(async () => {
     setIsLoading(true);
     try {
+      const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
+      const deletedIds: string[] = deletedTxRaw ? JSON.parse(deletedTxRaw) : [];
+
       // 1. Wallets
       const { data: wData } = await supabase.from('wallets').select('*');
       if (wData && wData.length > 0) setWallets(wData);
 
       // 2. Transactions
-      const { data: tData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-      if (tData && tData.length > 0) setTransactions(tData);
+      const { data: tData, error: tErr } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (!tErr && tData !== null) {
+        const filtered = tData.filter((t: Transaction) => !deletedIds.includes(t.id));
+        setTransactions(filtered);
+      } else {
+        setTransactions((prev) => prev.filter((t) => !deletedIds.includes(t.id)));
+      }
 
       // 3. Budgets
       const { data: bData } = await supabase.from('budgets').select('*');
@@ -159,6 +241,34 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const { data: jData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
       if (jData && jData.length > 0) setJournalEntries(jData);
 
+      // 13. Categories (Merge Initial + LocalStorage + Supabase)
+      const allCats: CategoryItem[] = [...INITIAL_CATEGORIES];
+      try {
+        const saved = localStorage.getItem('dashboard_custom_categories');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((c: CategoryItem) => {
+              if (!allCats.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
+                allCats.push(c);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+
+      try {
+        const { data: catData } = await supabase.from('categories').select('*');
+        if (catData && catData.length > 0) {
+          catData.forEach((c: CategoryItem) => {
+            if (!allCats.some((m) => m.name.toLowerCase() === c.name.toLowerCase())) {
+              allCats.push(c);
+            }
+          });
+        }
+      } catch (catErr) {}
+
+      setCategories(allCats);
       setIsOnline(true);
     } catch (err) {
       console.warn('Using offline/local state:', err);
@@ -252,7 +362,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
     // Sync to Supabase
     try {
-      await supabase.from('transactions').insert([tx]);
+      const { data, error } = await supabase.from('transactions').insert([tx]).select().single();
+      if (data && data.id) {
+        setTransactions((prev) => prev.map((t) => (t.id === newId ? data : t)));
+      }
       if (targetWallet) {
         await supabase.from('wallets').update({ balance: newBalance }).eq('id', targetWallet.id);
       }
@@ -338,6 +451,16 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     const txToDelete = transactions.find((t) => t.id === id);
     setTransactions((prev) => prev.filter((t) => t.id !== id));
 
+    // Track deleted IDs in localStorage so deleted mock/real transactions never return
+    try {
+      const deletedTxRaw = localStorage.getItem('dashboard_deleted_tx_ids');
+      const deletedIds: string[] = deletedTxRaw ? JSON.parse(deletedTxRaw) : [];
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+        localStorage.setItem('dashboard_deleted_tx_ids', JSON.stringify(deletedIds));
+      }
+    } catch (e) {}
+
     if (txToDelete) {
       const targetWallet = wallets.find((w) => w.name.toLowerCase() === txToDelete.payment_method.toLowerCase());
       if (targetWallet) {
@@ -410,6 +533,45 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         .upsert({ category, limit_amount, month_year: currentMonth }, { onConflict: 'category,month_year' });
     } catch (err) {
       console.warn('Update budget error:', err);
+    }
+  };
+
+  const addCategory = async (c: Omit<CategoryItem, 'id'>) => {
+    const newCat: CategoryItem = {
+      ...c,
+      id: 'cat-' + Date.now(),
+    };
+    setCategories((prev) => {
+      if (prev.some((item) => item.name.toLowerCase() === c.name.toLowerCase())) {
+        return prev;
+      }
+      const updated = [...prev, newCat];
+      try {
+        localStorage.setItem('dashboard_custom_categories', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    try {
+      await supabase.from('categories').insert([newCat]);
+    } catch (err) {
+      // Supabase table fallback
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    setCategories((prev) => {
+      const updated = prev.filter((c) => c.id !== id);
+      try {
+        localStorage.setItem('dashboard_custom_categories', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    try {
+      await supabase.from('categories').delete().eq('id', id);
+    } catch (err) {
+      // Supabase table fallback
     }
   };
 
@@ -640,6 +802,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     <DashboardContext.Provider
       value={{
         wallets,
+        categories,
         transactions,
         budgets,
         addTransaction,
@@ -649,6 +812,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         updateWallet,
         deleteWallet,
         updateBudget,
+        addCategory,
+        deleteCategory,
         streaks,
         triggerStreak,
         notes,

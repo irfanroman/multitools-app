@@ -19,10 +19,12 @@ import { useDashboard } from '@/lib/DashboardContext';
 import { TopHeader } from '@/components/layout/TopHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { CapsuleProgress } from '@/components/ui/CapsuleProgress';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 export default function OverviewPage() {
   const {
     wallets,
+    categories,
     transactions,
     budgets,
     updateBudget,
@@ -382,26 +384,23 @@ export default function OverviewPage() {
             <form onSubmit={handleSaveBudget} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Pilih Kategori</label>
-                <select
+                <CustomSelect
                   value={editCategory}
-                  onChange={(e) => {
-                    const selected = e.target.value;
+                  onChange={(selected) => {
                     setEditCategory(selected);
                     const currentBudget = budgets.find((b) => b.category.toLowerCase() === selected.toLowerCase());
                     if (currentBudget) {
                       setEditLimit(String(currentBudget.limit_amount));
                     }
                   }}
-                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
-                >
-                  <option value="makan">🍜 Makan & Minum</option>
-                  <option value="kos">🏠 Sewa Kos</option>
-                  <option value="transport">🛵 Transportasi</option>
-                  <option value="kuliah">🎓 Kuliah & Tools DS</option>
-                  <option value="hiburan">☕ Hiburan & Nongkrong</option>
-                  <option value="belanja">🛍️ Belanja</option>
-                  <option value="lainnya">📦 Lainnya</option>
-                </select>
+                  options={categories
+                    .filter((c) => c.type === 'expense' || c.type === 'both')
+                    .map((c) => ({
+                      value: c.name.toLowerCase(),
+                      label: c.name,
+                      color: c.color,
+                    }))}
+                />
               </div>
 
               <div>
@@ -409,8 +408,9 @@ export default function OverviewPage() {
                 <input
                   type="number"
                   required
-                  min="10000"
-                  step="50000"
+                  min="0"
+                  step="any"
+                  placeholder="Contoh: 2000000"
                   value={editLimit}
                   onChange={(e) => setEditLimit(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"

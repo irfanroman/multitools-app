@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { DashboardProvider } from '@/lib/DashboardContext';
+import { ThemeProvider } from '@/lib/ThemeContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AuthGuard } from '@/components/layout/AuthGuard';
 
@@ -23,21 +24,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id" className={`h-full ${plusJakartaSans.variable}`}>
+    <html lang="id" className={`h-full ${plusJakartaSans.variable}`} suppressHydrationWarning>
       <body className="min-h-full flex flex-row bg-[#EDEFEB] text-[#111111] font-sans antialiased selection:bg-[#E4FF6B] selection:text-[#111111] tabular-nums">
-        <AuthGuard>
-          <DashboardProvider>
-            {/* Dark Icon-only Sidebar */}
-            <Sidebar />
+        <ThemeProvider>
+          <AuthGuard>
+            <DashboardProvider>
+              {/* Dark Icon-only Sidebar */}
+              <Sidebar />
 
-            {/* Main App Canvas */}
-            <main className="flex-1 min-w-0 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 flex flex-col">
-              <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col">
-                {children}
-              </div>
-            </main>
-          </DashboardProvider>
-        </AuthGuard>
+              {/* Main App Canvas */}
+              <main className="flex-1 min-w-0 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 flex flex-col">
+                <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col">
+                  {children}
+                </div>
+              </main>
+            </DashboardProvider>
+          </AuthGuard>
+        </ThemeProvider>
       </body>
     </html>
   );
