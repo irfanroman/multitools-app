@@ -10,7 +10,7 @@ export interface Wallet {
 export interface CategoryItem {
   id: string;
   name: string;
-  type: 'expense' | 'income' | 'both';
+  type: 'expense' | 'income' | 'transfer' | 'both';
   color?: string;
 }
 
@@ -18,9 +18,10 @@ export interface Transaction {
   id: string;
   title: string;
   amount: number;
-  type: 'income' | 'expense';
-  category: string; // 'uang jajan', 'gaji/freelance', 'kos', 'makan', 'transport', 'kuliah', 'hiburan', 'belanja', 'lainnya'
-  payment_method: string; // 'Bank Jago', 'BCA', 'GoPay', 'Cash', etc.
+  type: 'income' | 'expense' | 'transfer';
+  category: string; // 'uang jajan', 'gaji/freelance', 'kos', 'makan', 'transport', 'kuliah', 'hiburan', 'belanja', 'pemindahan dana', 'lainnya'
+  payment_method: string; // Source wallet (e.g. 'BCA')
+  to_payment_method?: string; // Target wallet for transfer (e.g. 'Bank Jago')
   wallet_id?: string;
   date: string; // 'YYYY-MM-DD'
   is_recurring?: boolean;

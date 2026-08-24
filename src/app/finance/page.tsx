@@ -17,6 +17,7 @@ import {
   Repeat,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRightLeft,
   Pencil,
   X,
   Tag,
@@ -71,7 +72,7 @@ export default function FinancePage() {
   } = useDashboard();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterWallet, setFilterWallet] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -86,10 +87,11 @@ export default function FinancePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [editTxTitle, setEditTxTitle] = useState('');
   const [editTxAmount, setEditTxAmount] = useState('');
-  const [editTxType, setEditTxType] = useState<'income' | 'expense'>('expense');
+  const [editTxType, setEditTxType] = useState<'income' | 'expense' | 'transfer'>('expense');
   const [editTxCategory, setEditTxCategory] = useState('makan');
   const [editTxCustomCategory, setEditTxCustomCategory] = useState('');
   const [editTxPaymentMethod, setEditTxPaymentMethod] = useState('');
+  const [editTxToPaymentMethod, setEditTxToPaymentMethod] = useState('');
   const [editTxDate, setEditTxDate] = useState('');
   const [editTxNotes, setEditTxNotes] = useState('');
   const [editTxIsRecurring, setEditTxIsRecurring] = useState(false);
@@ -255,6 +257,7 @@ export default function FinancePage() {
     setEditTxCategory(t.category.toLowerCase());
     setEditTxCustomCategory('');
     setEditTxPaymentMethod(t.payment_method);
+    setEditTxToPaymentMethod(t.to_payment_method || wallets.find((w) => w.name.toLowerCase() !== t.payment_method.toLowerCase())?.name || 'BCA');
     setEditTxDate(t.date || new Date().toISOString().split('T')[0]);
     setEditTxNotes(t.notes || '');
     setEditTxIsRecurring(!!t.is_recurring);
@@ -265,7 +268,9 @@ export default function FinancePage() {
     if (!editingTx || !editTxTitle || !editTxAmount) return;
 
     let finalCategory = editTxCategory;
-    if (editTxCategory === 'lainnya' && editTxCustomCategory.trim()) {
+    if (editTxType === 'transfer') {
+      finalCategory = 'pemindahan dana';
+    } else if (editTxCategory === 'lainnya' && editTxCustomCategory.trim()) {
       finalCategory = editTxCustomCategory.trim();
     }
 
@@ -275,6 +280,7 @@ export default function FinancePage() {
       type: editTxType,
       category: finalCategory,
       payment_method: editTxPaymentMethod,
+      to_payment_method: editTxType === 'transfer' ? editTxToPaymentMethod : undefined,
       date: editTxDate,
       notes: editTxNotes || undefined,
       is_recurring: editTxIsRecurring,
@@ -598,11 +604,12 @@ export default function FinancePage() {
             <CustomSelect
               value={filterType}
               onChange={(v) => setFilterType(v as any)}
-              className="w-32"
+              className="w-36"
               options={[
                 { value: 'all', label: 'Semua Tipe' },
                 { value: 'income', label: 'Pemasukan (+)' },
                 { value: 'expense', label: 'Pengeluaran (-)' },
+                { value: 'transfer', label: 'Pemindahan (↔)' },
               ]}
             />
 
@@ -662,11 +669,15 @@ export default function FinancePage() {
                     className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm ${
                       t.type === 'income'
                         ? 'bg-emerald-100 text-emerald-800'
+                        : t.type === 'transfer'
+                        ? 'bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
                         : 'bg-[#EDEFEB] text-[#111111]'
                     }`}
                   >
                     {t.type === 'income' ? (
                       <ArrowDownRight className="w-5 h-5 text-emerald-600" />
+                    ) : t.type === 'transfer' ? (
+                      <ArrowRightLeft className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                     ) : (
                       <ArrowUpRight className="w-5 h-5 text-rose-500" />
                     )}
@@ -684,9 +695,15 @@ export default function FinancePage() {
                     <div className="flex items-center gap-2 text-xs text-[#7F847C] mt-0.5">
                       <span className="capitalize">{t.category}</span>
                       <span>•</span>
-                      <span className="font-semibold text-[#111111] bg-[#EDEFEB] px-2 py-0.5 rounded-md text-[10px]">
-                        {t.payment_method}
-                      </span>
+                      {t.type === 'transfer' ? (
+                        <span className="font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md text-[10px]">
+                          {t.payment_method} → {t.to_payment_method || 'Dompet Lain'}
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-[#111111] bg-[#EDEFEB] px-2 py-0.5 rounded-md text-[10px]">
+                          {t.payment_method}
+                        </span>
+                      )}
                       <span>•</span>
                       <span>{t.date}</span>
                     </div>
@@ -697,10 +714,14 @@ export default function FinancePage() {
                   <div className="text-right">
                     <span
                       className={`text-sm font-black ${
-                        t.type === 'income' ? 'text-emerald-600' : 'text-[#111111]'
+                        t.type === 'income'
+                          ? 'text-emerald-600'
+                          : t.type === 'transfer'
+                          ? 'text-indigo-600 dark:text-indigo-400'
+                          : 'text-[#111111]'
                       }`}
                     >
-                      {t.type === 'income' ? '+' : '-'} Rp {t.amount.toLocaleString('id-ID')}
+                      {t.type === 'income' ? '+' : t.type === 'transfer' ? '↔' : '-'} Rp {t.amount.toLocaleString('id-ID')}
                     </span>
                     {t.notes && <p className="text-[10px] text-[#7F847C] max-w-[150px] truncate">{t.notes}</p>}
                   </div>
@@ -1108,32 +1129,46 @@ export default function FinancePage() {
 
             <form onSubmit={handleSaveTransaction} className="space-y-4">
               {/* Type Toggle */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-[#EDEFEB] rounded-2xl">
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#EDEFEB] rounded-2xl">
                 <button
                   type="button"
                   onClick={() => {
                     setEditTxType('expense');
                   }}
-                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                  className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                     editTxType === 'expense'
                       ? 'bg-rose-500 text-white shadow-xs'
                       : 'text-[#7F847C] hover:text-[#111111]'
                   }`}
                 >
-                  Pengeluaran (Expense)
+                  Pengeluaran
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setEditTxType('income');
                   }}
-                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                  className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                     editTxType === 'income'
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'text-[#7F847C] hover:text-[#111111]'
                   }`}
                 >
-                  Pemasukan (Income)
+                  Pemasukan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditTxType('transfer');
+                    setEditTxCategory('pemindahan dana');
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
+                    editTxType === 'transfer'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-[#7F847C] hover:text-[#111111]'
+                  }`}
+                >
+                  Transfer / Pindah
                 </button>
               </div>
 
@@ -1143,14 +1178,18 @@ export default function FinancePage() {
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Belanja Bulanan, Freelance project"
+                  placeholder={
+                    editTxType === 'transfer'
+                      ? 'Contoh: Transfer BCA ke Jago, Topup GoPay'
+                      : 'Contoh: Belanja Bulanan, Freelance project'
+                  }
                   value={editTxTitle}
                   onChange={(e) => setEditTxTitle(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
                 />
               </div>
 
-              {/* Amount & Payment Method */}
+              {/* Amount & Date */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Nominal (Rp)</label>
@@ -1165,44 +1204,6 @@ export default function FinancePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
-                  <CustomSelect
-                    value={editTxPaymentMethod}
-                    onChange={(v) => setEditTxPaymentMethod(v)}
-                    options={wallets.map((w) => ({
-                      value: w.name,
-                      label: w.name,
-                      sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
-                      color: w.color,
-                    }))}
-                  />
-                </div>
-              </div>
-
-              {/* Category & Date */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
-                  <CustomSelect
-                    value={editTxCategory}
-                    onChange={(v) => setEditTxCategory(v)}
-                    onAddNew={() => setIsCategoryModalOpen(true)}
-                    addNewLabel="+ Tambah Kategori Baru"
-                    options={categories
-                      .filter((c) =>
-                        editTxType === 'expense'
-                          ? c.type === 'expense' || c.type === 'both'
-                          : c.type === 'income' || c.type === 'both'
-                      )
-                      .map((c) => ({
-                        value: c.name.toLowerCase(),
-                        label: c.name,
-                        color: c.color,
-                      }))}
-                  />
-                </div>
-
-                <div>
                   <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tanggal</label>
                   <input
                     type="date"
@@ -1213,6 +1214,81 @@ export default function FinancePage() {
                   />
                 </div>
               </div>
+
+              {editTxType === 'transfer' ? (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 dark:bg-indigo-950/20 dark:border-indigo-900/40">
+                  <div>
+                    <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1 uppercase">
+                      Dari Dompet (Asal)
+                    </label>
+                    <CustomSelect
+                      value={editTxPaymentMethod}
+                      onChange={(v) => setEditTxPaymentMethod(v)}
+                      options={wallets.map((w) => ({
+                        value: w.name,
+                        label: w.name,
+                        sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                        color: w.color,
+                      }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1 uppercase">
+                      Ke Dompet (Tujuan)
+                    </label>
+                    <CustomSelect
+                      value={editTxToPaymentMethod}
+                      onChange={(v) => setEditTxToPaymentMethod(v)}
+                      options={wallets
+                        .filter((w) => w.name.toLowerCase() !== editTxPaymentMethod.toLowerCase())
+                        .map((w) => ({
+                          value: w.name,
+                          label: w.name,
+                          sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                          color: w.color,
+                        }))}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
+                    <CustomSelect
+                      value={editTxPaymentMethod}
+                      onChange={(v) => setEditTxPaymentMethod(v)}
+                      options={wallets.map((w) => ({
+                        value: w.name,
+                        label: w.name,
+                        sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                        color: w.color,
+                      }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
+                    <CustomSelect
+                      value={editTxCategory}
+                      onChange={(v) => setEditTxCategory(v)}
+                      onAddNew={() => setIsCategoryModalOpen(true)}
+                      addNewLabel="+ Tambah Kategori Baru"
+                      options={categories
+                        .filter((c) =>
+                          editTxType === 'expense'
+                            ? c.type === 'expense' || c.type === 'both'
+                            : c.type === 'income' || c.type === 'both'
+                        )
+                        .map((c) => ({
+                          value: c.name.toLowerCase(),
+                          label: c.name,
+                          color: c.color,
+                        }))}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Custom Category Input if 'lainnya' */}
               {editTxCategory === 'lainnya' && (

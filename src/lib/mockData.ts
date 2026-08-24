@@ -30,7 +30,8 @@ export const INITIAL_CATEGORIES: CategoryItem[] = [
   { id: 'cat-6', name: 'Belanja', type: 'expense', color: '#EAB308' },
   { id: 'cat-7', name: 'Gaji/Freelance', type: 'income', color: '#10B981' },
   { id: 'cat-8', name: 'Uang Jajan', type: 'income', color: '#10B981' },
-  { id: 'cat-9', name: 'Lainnya', type: 'both', color: '#7F847C' },
+  { id: 'cat-9', name: 'Pemindahan Dana', type: 'transfer', color: '#6366F1' },
+  { id: 'cat-10', name: 'Lainnya', type: 'both', color: '#7F847C' },
 ];
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [];

@@ -346,17 +346,32 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     const newId = 'tx-' + Date.now();
     const newTx: Transaction = { ...tx, id: newId };
 
-    const targetWallet = wallets.find((w) => w.name.toLowerCase() === tx.payment_method.toLowerCase());
-    const delta = tx.type === 'income' ? tx.amount : -tx.amount;
-    const newBalance = targetWallet ? targetWallet.balance + delta : 0;
+    const sourceWallet = wallets.find((w) => w.name.toLowerCase() === tx.payment_method.toLowerCase());
+    const destWallet = tx.to_payment_method
+      ? wallets.find((w) => w.name.toLowerCase() === tx.to_payment_method?.toLowerCase())
+      : null;
+
+    let newSourceBalance = sourceWallet ? sourceWallet.balance : 0;
+    let newDestBalance = destWallet ? destWallet.balance : 0;
+
+    if (tx.type === 'transfer') {
+      if (sourceWallet) newSourceBalance = Math.max(0, sourceWallet.balance - tx.amount);
+      if (destWallet) newDestBalance = destWallet.balance + tx.amount;
+    } else {
+      const delta = tx.type === 'income' ? tx.amount : -tx.amount;
+      if (sourceWallet) newSourceBalance = Math.max(0, sourceWallet.balance + delta);
+    }
 
     // Optimistic UI update
     setTransactions((prev) => [newTx, ...prev]);
-    if (targetWallet) {
-      setWallets((prev) =>
-        prev.map((w) => (w.id === targetWallet.id ? { ...w, balance: newBalance } : w))
-      );
-    }
+
+    setWallets((prev) =>
+      prev.map((w) => {
+        if (sourceWallet && w.id === sourceWallet.id) return { ...w, balance: newSourceBalance };
+        if (destWallet && w.id === destWallet.id) return { ...w, balance: newDestBalance };
+        return w;
+      })
+    );
 
     triggerStreak('finance');
 
@@ -366,8 +381,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (data && data.id) {
         setTransactions((prev) => prev.map((t) => (t.id === newId ? data : t)));
       }
-      if (targetWallet) {
-        await supabase.from('wallets').update({ balance: newBalance }).eq('id', targetWallet.id);
+      if (sourceWallet) {
+        await supabase.from('wallets').update({ balance: newSourceBalance }).eq('id', sourceWallet.id);
+      }
+      if (destWallet) {
+        await supabase.from('wallets').update({ balance: newDestBalance }).eq('id', destWallet.id);
       }
     } catch (err) {
       console.warn('Could not sync transaction to Supabase:', err);
@@ -382,63 +400,6 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
     // Update transactions state optimistically
     setTransactions((prev) => prev.map((t) => (t.id === id ? newTx : t)));
-
-    // Check if wallet balance needs adjustment
-    const oldWalletName = oldTx.payment_method;
-    const newWalletName = newTx.payment_method;
-    const oldType = oldTx.type;
-    const newType = newTx.type;
-    const oldAmount = Number(oldTx.amount);
-    const newAmount = Number(newTx.amount);
-
-    const isFinancialChange =
-      oldWalletName.toLowerCase() !== newWalletName.toLowerCase() ||
-      oldType !== newType ||
-      oldAmount !== newAmount;
-
-    if (isFinancialChange) {
-      const oldWallet = wallets.find((w) => w.name.toLowerCase() === oldWalletName.toLowerCase());
-      const newWallet = wallets.find((w) => w.name.toLowerCase() === newWalletName.toLowerCase());
-
-      const oldRevert = oldType === 'income' ? -oldAmount : oldAmount;
-      const newApply = newType === 'income' ? newAmount : -newAmount;
-
-      if (oldWallet && newWallet && oldWallet.id === newWallet.id) {
-        const netChange = oldRevert + newApply;
-        const newBalance = Math.max(0, oldWallet.balance + netChange);
-        setWallets((prev) =>
-          prev.map((w) => (w.id === oldWallet.id ? { ...w, balance: newBalance } : w))
-        );
-        try {
-          await supabase.from('wallets').update({ balance: newBalance }).eq('id', oldWallet.id);
-        } catch (err) {
-          console.warn('Could not update wallet balance:', err);
-        }
-      } else {
-        if (oldWallet) {
-          const oldBalance = Math.max(0, oldWallet.balance + oldRevert);
-          setWallets((prev) =>
-            prev.map((w) => (w.id === oldWallet.id ? { ...w, balance: oldBalance } : w))
-          );
-          try {
-            await supabase.from('wallets').update({ balance: oldBalance }).eq('id', oldWallet.id);
-          } catch (err) {
-            console.warn('Could not revert old wallet balance:', err);
-          }
-        }
-        if (newWallet) {
-          const newBalance = Math.max(0, newWallet.balance + newApply);
-          setWallets((prev) =>
-            prev.map((w) => (w.id === newWallet.id ? { ...w, balance: newBalance } : w))
-          );
-          try {
-            await supabase.from('wallets').update({ balance: newBalance }).eq('id', newWallet.id);
-          } catch (err) {
-            console.warn('Could not apply new wallet balance:', err);
-          }
-        }
-      }
-    }
 
     try {
       await supabase.from('transactions').update(updates).eq('id', id);
@@ -462,17 +423,39 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {}
 
     if (txToDelete) {
-      const targetWallet = wallets.find((w) => w.name.toLowerCase() === txToDelete.payment_method.toLowerCase());
-      if (targetWallet) {
-        const revert = txToDelete.type === 'income' ? -txToDelete.amount : txToDelete.amount;
-        const newBalance = Math.max(0, targetWallet.balance + revert);
+      const sourceWallet = wallets.find((w) => w.name.toLowerCase() === txToDelete.payment_method.toLowerCase());
+      const destWallet = txToDelete.to_payment_method
+        ? wallets.find((w) => w.name.toLowerCase() === txToDelete.to_payment_method?.toLowerCase())
+        : null;
+
+      if (txToDelete.type === 'transfer') {
+        const newSourceBalance = sourceWallet ? sourceWallet.balance + txToDelete.amount : 0;
+        const newDestBalance = destWallet ? Math.max(0, destWallet.balance - txToDelete.amount) : 0;
 
         setWallets((prev) =>
-          prev.map((w) => (w.id === targetWallet.id ? { ...w, balance: newBalance } : w))
+          prev.map((w) => {
+            if (sourceWallet && w.id === sourceWallet.id) return { ...w, balance: newSourceBalance };
+            if (destWallet && w.id === destWallet.id) return { ...w, balance: newDestBalance };
+            return w;
+          })
         );
 
         try {
-          await supabase.from('wallets').update({ balance: newBalance }).eq('id', targetWallet.id);
+          if (sourceWallet) await supabase.from('wallets').update({ balance: newSourceBalance }).eq('id', sourceWallet.id);
+          if (destWallet) await supabase.from('wallets').update({ balance: newDestBalance }).eq('id', destWallet.id);
+        } catch (err) {
+          console.warn('Could not sync wallet revert to Supabase:', err);
+        }
+      } else if (sourceWallet) {
+        const revert = txToDelete.type === 'income' ? -txToDelete.amount : txToDelete.amount;
+        const newBalance = Math.max(0, sourceWallet.balance + revert);
+
+        setWallets((prev) =>
+          prev.map((w) => (w.id === sourceWallet.id ? { ...w, balance: newBalance } : w))
+        );
+
+        try {
+          await supabase.from('wallets').update({ balance: newBalance }).eq('id', sourceWallet.id);
         } catch (err) {
           console.warn('Could not sync wallet revert to Supabase:', err);
         }

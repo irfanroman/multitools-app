@@ -33,9 +33,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   // Finance form state
   const [txTitle, setTxTitle] = useState('');
   const [txAmount, setTxAmount] = useState('');
-  const [txType, setTxType] = useState<'income' | 'expense'>('expense');
+  const [txType, setTxType] = useState<'income' | 'expense' | 'transfer'>('expense');
   const [txCategory, setTxCategory] = useState('makan');
   const [txPaymentMethod, setTxPaymentMethod] = useState(wallets[0]?.name || 'Bank Jago');
+  const [txToPaymentMethod, setTxToPaymentMethod] = useState(wallets[1]?.name || 'BCA');
   const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [txNotes, setTxNotes] = useState('');
 
@@ -65,12 +66,21 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const handleFinanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!txTitle || !txAmount) return;
+
+    let finalCategory = txCategory;
+    if (txType === 'transfer') {
+      finalCategory = 'pemindahan dana';
+    } else if (txType === 'income') {
+      finalCategory = txCategory || 'gaji/freelance';
+    }
+
     await addTransaction({
       title: txTitle,
       amount: parseFloat(txAmount),
       type: txType,
-      category: txType === 'income' ? (txCategory || 'gaji/freelance') : txCategory,
+      category: finalCategory,
       payment_method: txPaymentMethod,
+      to_payment_method: txType === 'transfer' ? txToPaymentMethod : undefined,
       date: txDate || new Date().toISOString().split('T')[0],
       notes: txNotes || undefined,
     });
@@ -188,29 +198,40 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         {/* Tab 1: Finance Form */}
         {activeTab === 'finance' && (
           <form onSubmit={handleFinanceSubmit} className="space-y-4">
-            {/* Income vs Expense Toggle */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-[#EDEFEB] rounded-2xl">
+            {/* Income vs Expense vs Transfer Toggle */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#EDEFEB] rounded-2xl">
               <button
                 type="button"
                 onClick={() => setTxType('expense')}
-                className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                   txType === 'expense'
                     ? 'bg-rose-500 text-white shadow-xs'
                     : 'text-[#7F847C] hover:text-[#111111]'
                 }`}
               >
-                Pengeluaran (Expense)
+                Pengeluaran
               </button>
               <button
                 type="button"
                 onClick={() => setTxType('income')}
-                className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
                   txType === 'income'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-[#7F847C] hover:text-[#111111]'
                 }`}
               >
-                Pemasukan (Income)
+                Pemasukan
+              </button>
+              <button
+                type="button"
+                onClick={() => setTxType('transfer')}
+                className={`py-2 rounded-xl text-xs font-bold transition-all text-center ${
+                  txType === 'transfer'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-[#7F847C] hover:text-[#111111]'
+                }`}
+              >
+                Transfer / Pindah
               </button>
             </div>
 
@@ -219,7 +240,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="Contoh: Belanja Bulanan, Freelance project"
+                placeholder={
+                  txType === 'transfer'
+                    ? 'Contoh: Transfer BCA ke Jago, Topup GoPay'
+                    : 'Contoh: Belanja Bulanan, Freelance project'
+                }
                 value={txTitle}
                 onChange={(e) => setTxTitle(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
@@ -252,40 +277,78 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
-                <CustomSelect
-                  value={txPaymentMethod}
-                  onChange={(v) => setTxPaymentMethod(v)}
-                  options={wallets.map((w) => ({
-                    value: w.name,
-                    label: w.name,
-                    sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
-                    color: w.color,
-                  }))}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
-                <CustomSelect
-                  value={txCategory}
-                  onChange={(v) => setTxCategory(v)}
-                  options={categories
-                    .filter((c) =>
-                      txType === 'expense'
-                        ? c.type === 'expense' || c.type === 'both'
-                        : c.type === 'income' || c.type === 'both'
-                    )
-                    .map((c) => ({
-                      value: c.name.toLowerCase(),
-                      label: c.name,
-                      color: c.color,
+            {txType === 'transfer' ? (
+              <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 dark:bg-indigo-950/20 dark:border-indigo-900/40">
+                <div>
+                  <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1 uppercase">
+                    Dari Dompet (Asal)
+                  </label>
+                  <CustomSelect
+                    value={txPaymentMethod}
+                    onChange={(v) => setTxPaymentMethod(v)}
+                    options={wallets.map((w) => ({
+                      value: w.name,
+                      label: w.name,
+                      sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                      color: w.color,
                     }))}
-                />
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1 uppercase">
+                    Ke Dompet (Tujuan)
+                  </label>
+                  <CustomSelect
+                    value={txToPaymentMethod}
+                    onChange={(v) => setTxToPaymentMethod(v)}
+                    options={wallets
+                      .filter((w) => w.name.toLowerCase() !== txPaymentMethod.toLowerCase())
+                      .map((w) => ({
+                        value: w.name,
+                        label: w.name,
+                        sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                        color: w.color,
+                      }))}
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
+                  <CustomSelect
+                    value={txPaymentMethod}
+                    onChange={(v) => setTxPaymentMethod(v)}
+                    options={wallets.map((w) => ({
+                      value: w.name,
+                      label: w.name,
+                      sublabel: `Rp ${w.balance.toLocaleString('id-ID')}`,
+                      color: w.color,
+                    }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
+                  <CustomSelect
+                    value={txCategory}
+                    onChange={(v) => setTxCategory(v)}
+                    options={categories
+                      .filter((c) =>
+                        txType === 'expense'
+                          ? c.type === 'expense' || c.type === 'both'
+                          : c.type === 'income' || c.type === 'both'
+                      )
+                      .map((c) => ({
+                        value: c.name.toLowerCase(),
+                        label: c.name,
+                        color: c.color,
+                      }))}
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">
