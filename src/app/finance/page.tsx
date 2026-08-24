@@ -17,7 +17,10 @@ import {
   Repeat,
   ArrowUpRight,
   ArrowDownRight,
+  Pencil,
+  X,
 } from 'lucide-react';
+import { Transaction } from '@/lib/types';
 import {
   ResponsiveContainer,
   PieChart,
@@ -54,6 +57,7 @@ export default function FinancePage() {
     transactions,
     budgets,
     deleteTransaction,
+    updateTransaction,
     addWallet,
     updateWallet,
     deleteWallet,
@@ -66,6 +70,18 @@ export default function FinancePage() {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterWallet, setFilterWallet] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Edit Transaction modal state
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editTxTitle, setEditTxTitle] = useState('');
+  const [editTxAmount, setEditTxAmount] = useState('');
+  const [editTxType, setEditTxType] = useState<'income' | 'expense'>('expense');
+  const [editTxCategory, setEditTxCategory] = useState('makan');
+  const [editTxCustomCategory, setEditTxCustomCategory] = useState('');
+  const [editTxPaymentMethod, setEditTxPaymentMethod] = useState('');
+  const [editTxDate, setEditTxDate] = useState('');
+  const [editTxNotes, setEditTxNotes] = useState('');
+  const [editTxIsRecurring, setEditTxIsRecurring] = useState(false);
 
   // Edit Wallet modal state
   const [editingWallet, setEditingWallet] = useState<any | null>(null);
@@ -203,6 +219,55 @@ export default function FinancePage() {
     if (!editLimit) return;
     await updateBudget(editCategory, parseFloat(editLimit));
     setIsBudgetModalOpen(false);
+  };
+
+  const standardExpenseCategories = ['makan', 'kos', 'transport', 'kuliah', 'hiburan', 'belanja'];
+  const standardIncomeCategories = ['gaji/freelance', 'uang jajan'];
+
+  const handleOpenEditTx = (t: Transaction) => {
+    setEditingTx(t);
+    setEditTxTitle(t.title);
+    setEditTxAmount(String(t.amount));
+    setEditTxType(t.type);
+
+    const isStdExpense = t.type === 'expense' && standardExpenseCategories.includes(t.category.toLowerCase());
+    const isStdIncome = t.type === 'income' && standardIncomeCategories.includes(t.category.toLowerCase());
+
+    if (isStdExpense || isStdIncome) {
+      setEditTxCategory(t.category.toLowerCase());
+      setEditTxCustomCategory('');
+    } else {
+      setEditTxCategory('lainnya');
+      setEditTxCustomCategory(t.category.toLowerCase() === 'lainnya' ? '' : t.category);
+    }
+
+    setEditTxPaymentMethod(t.payment_method);
+    setEditTxDate(t.date || new Date().toISOString().split('T')[0]);
+    setEditTxNotes(t.notes || '');
+    setEditTxIsRecurring(!!t.is_recurring);
+  };
+
+  const handleSaveTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTx || !editTxTitle || !editTxAmount) return;
+
+    let finalCategory = editTxCategory;
+    if (editTxCategory === 'lainnya') {
+      finalCategory = editTxCustomCategory.trim() || 'lainnya';
+    }
+
+    await updateTransaction(editingTx.id, {
+      title: editTxTitle,
+      amount: parseFloat(editTxAmount),
+      type: editTxType,
+      category: finalCategory,
+      payment_method: editTxPaymentMethod,
+      date: editTxDate,
+      notes: editTxNotes || undefined,
+      is_recurring: editTxIsRecurring,
+    });
+
+    setEditingTx(null);
   };
 
   return (
@@ -600,13 +665,22 @@ export default function FinancePage() {
                     {t.notes && <p className="text-[10px] text-[#7F847C] max-w-[150px] truncate">{t.notes}</p>}
                   </div>
 
-                  <button
-                    onClick={() => deleteTransaction(t.id)}
-                    title="Hapus Transaksi"
-                    className="p-2 rounded-xl text-[#7F847C] hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEditTx(t)}
+                      title="Edit Transaksi"
+                      className="p-2 rounded-xl text-[#7F847C] hover:text-[#111111] hover:bg-[#EDEFEB] transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteTransaction(t.id)}
+                      title="Hapus Transaksi"
+                      className="p-2 rounded-xl text-[#7F847C] hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))
@@ -831,6 +905,229 @@ export default function FinancePage() {
                     className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold"
                   >
                     Simpan Saldo
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Transaction Modal */}
+      {editingTx && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-black/10 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-black/5 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-2xl bg-[#111111] text-[#E4FF6B]">
+                  <Pencil className="w-4 h-4" />
+                </span>
+                <h3 className="text-base font-extrabold text-[#111111]">Edit Transaksi</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingTx(null)}
+                className="p-1.5 rounded-full hover:bg-[#EDEFEB] text-[#7F847C]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTransaction} className="space-y-4">
+              {/* Type Toggle */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-[#EDEFEB] rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditTxType('expense');
+                    if (['gaji/freelance', 'uang jajan'].includes(editTxCategory)) {
+                      setEditTxCategory('makan');
+                    }
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    editTxType === 'expense'
+                      ? 'bg-rose-500 text-white shadow-xs'
+                      : 'text-[#7F847C] hover:text-[#111111]'
+                  }`}
+                >
+                  Pengeluaran (Expense)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditTxType('income');
+                    if (['makan', 'kos', 'transport', 'kuliah', 'hiburan', 'belanja'].includes(editTxCategory)) {
+                      setEditTxCategory('gaji/freelance');
+                    }
+                  }}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    editTxType === 'income'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-[#7F847C] hover:text-[#111111]'
+                  }`}
+                >
+                  Pemasukan (Income)
+                </button>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Deskripsi Transaksi</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Belanja Bulanan, Freelance project"
+                  value={editTxTitle}
+                  onChange={(e) => setEditTxTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                />
+              </div>
+
+              {/* Amount & Payment Method */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Nominal (Rp)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={editTxAmount}
+                    onChange={(e) => setEditTxAmount(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Metode Pembayaran</label>
+                  <select
+                    value={editTxPaymentMethod}
+                    onChange={(e) => setEditTxPaymentMethod(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  >
+                    {wallets.map((w) => (
+                      <option key={w.id} value={w.name}>
+                        {w.name} (Rp {w.balance.toLocaleString('id-ID')})
+                      </option>
+                    ))}
+                    {!wallets.some((w) => w.name.toLowerCase() === editTxPaymentMethod.toLowerCase()) && (
+                      <option value={editTxPaymentMethod}>{editTxPaymentMethod}</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* Category & Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Kategori</label>
+                  {editTxType === 'expense' ? (
+                    <select
+                      value={editTxCategory}
+                      onChange={(e) => setEditTxCategory(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                    >
+                      <option value="makan">🍜 Makanan & Minuman</option>
+                      <option value="kos">🏠 Sewa Kos / Tempat</option>
+                      <option value="transport">🛵 Transportasi</option>
+                      <option value="kuliah">🎓 Kuliah & Tools DS</option>
+                      <option value="hiburan">☕ Hiburan & Nongkrong</option>
+                      <option value="belanja">🛍️ Belanja</option>
+                      <option value="lainnya">📦 Lainnya / Kustom</option>
+                    </select>
+                  ) : (
+                    <select
+                      value={editTxCategory}
+                      onChange={(e) => setEditTxCategory(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                    >
+                      <option value="gaji/freelance">💼 Gaji & Freelance</option>
+                      <option value="uang jajan">💰 Uang Jajan / Transfer</option>
+                      <option value="lainnya">📦 Lainnya / Kustom</option>
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Tanggal</label>
+                  <input
+                    type="date"
+                    required
+                    value={editTxDate}
+                    onChange={(e) => setEditTxDate(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  />
+                </div>
+              </div>
+
+              {/* Custom Category Input if 'lainnya' */}
+              {editTxCategory === 'lainnya' && (
+                <div>
+                  <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Nama Kategori Kustom</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Masukkan nama kategori baru"
+                    value={editTxCustomCategory}
+                    onChange={(e) => setEditTxCustomCategory(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                  />
+                </div>
+              )}
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-bold text-[#7F847C] mb-1 uppercase">Catatan (Opsional)</label>
+                <input
+                  type="text"
+                  placeholder="Catatan tambahan"
+                  value={editTxNotes}
+                  onChange={(e) => setEditTxNotes(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-2xl border border-black/10 bg-[#EDEFEB]/40 text-sm focus:outline-none focus:ring-2 focus:ring-[#111111]"
+                />
+              </div>
+
+              {/* Recurring Checkbox */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="editTxRecurring"
+                  checked={editTxIsRecurring}
+                  onChange={(e) => setEditTxIsRecurring(e.target.checked)}
+                  className="w-4 h-4 rounded text-[#111111] focus:ring-[#111111]"
+                />
+                <label htmlFor="editTxRecurring" className="text-xs font-semibold text-[#111111] cursor-pointer">
+                  Tandai sebagai transaksi rutin bulanan (Recurring)
+                </label>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-between items-center pt-3 border-t border-black/5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (confirm(`Hapus transaksi "${editingTx.title}"?`)) {
+                      await deleteTransaction(editingTx.id);
+                      setEditingTx(null);
+                    }
+                  }}
+                  className="text-xs text-rose-500 font-bold hover:underline flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Hapus Transaksi
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTx(null)}
+                    className="px-4 py-2 rounded-2xl bg-[#EDEFEB] text-xs font-bold text-[#111111]"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold shadow-sm hover:opacity-90 transition-opacity"
+                  >
+                    Simpan Perubahan
                   </button>
                 </div>
               </div>

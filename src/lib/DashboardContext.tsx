@@ -37,6 +37,7 @@ interface DashboardContextType {
   transactions: Transaction[];
   budgets: Budget[];
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<void>;
+  updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addWallet: (w: Omit<Wallet, 'id'>) => Promise<void>;
   updateWallet: (id: string, updates: Partial<Wallet>) => Promise<void>;
@@ -257,6 +258,79 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.warn('Could not sync transaction to Supabase:', err);
+    }
+  };
+
+  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
+    const oldTx = transactions.find((t) => t.id === id);
+    if (!oldTx) return;
+
+    const newTx: Transaction = { ...oldTx, ...updates };
+
+    // Update transactions state optimistically
+    setTransactions((prev) => prev.map((t) => (t.id === id ? newTx : t)));
+
+    // Check if wallet balance needs adjustment
+    const oldWalletName = oldTx.payment_method;
+    const newWalletName = newTx.payment_method;
+    const oldType = oldTx.type;
+    const newType = newTx.type;
+    const oldAmount = Number(oldTx.amount);
+    const newAmount = Number(newTx.amount);
+
+    const isFinancialChange =
+      oldWalletName.toLowerCase() !== newWalletName.toLowerCase() ||
+      oldType !== newType ||
+      oldAmount !== newAmount;
+
+    if (isFinancialChange) {
+      const oldWallet = wallets.find((w) => w.name.toLowerCase() === oldWalletName.toLowerCase());
+      const newWallet = wallets.find((w) => w.name.toLowerCase() === newWalletName.toLowerCase());
+
+      const oldRevert = oldType === 'income' ? -oldAmount : oldAmount;
+      const newApply = newType === 'income' ? newAmount : -newAmount;
+
+      if (oldWallet && newWallet && oldWallet.id === newWallet.id) {
+        const netChange = oldRevert + newApply;
+        const newBalance = Math.max(0, oldWallet.balance + netChange);
+        setWallets((prev) =>
+          prev.map((w) => (w.id === oldWallet.id ? { ...w, balance: newBalance } : w))
+        );
+        try {
+          await supabase.from('wallets').update({ balance: newBalance }).eq('id', oldWallet.id);
+        } catch (err) {
+          console.warn('Could not update wallet balance:', err);
+        }
+      } else {
+        if (oldWallet) {
+          const oldBalance = Math.max(0, oldWallet.balance + oldRevert);
+          setWallets((prev) =>
+            prev.map((w) => (w.id === oldWallet.id ? { ...w, balance: oldBalance } : w))
+          );
+          try {
+            await supabase.from('wallets').update({ balance: oldBalance }).eq('id', oldWallet.id);
+          } catch (err) {
+            console.warn('Could not revert old wallet balance:', err);
+          }
+        }
+        if (newWallet) {
+          const newBalance = Math.max(0, newWallet.balance + newApply);
+          setWallets((prev) =>
+            prev.map((w) => (w.id === newWallet.id ? { ...w, balance: newBalance } : w))
+          );
+          try {
+            await supabase.from('wallets').update({ balance: newBalance }).eq('id', newWallet.id);
+          } catch (err) {
+            console.warn('Could not apply new wallet balance:', err);
+          }
+        }
+      }
+    }
+
+    try {
+      await supabase.from('transactions').update(updates).eq('id', id);
+    } catch (err) {
+      console.warn('Update transaction error:', err);
     }
   };
 
@@ -569,6 +643,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         transactions,
         budgets,
         addTransaction,
+        updateTransaction,
         deleteTransaction,
         addWallet,
         updateWallet,
