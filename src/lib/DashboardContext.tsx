@@ -192,7 +192,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const { data: tData, error: tErr } = await supabase
         .from('transactions')
         .select('*')
-        .order('date', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (!tErr && tData !== null) {
         const filtered = tData.filter((t: Transaction) => !deletedIds.includes(t.id));

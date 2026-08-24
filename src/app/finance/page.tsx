@@ -18,6 +18,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ArrowRightLeft,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   Pencil,
   X,
   Tag,
@@ -75,7 +78,16 @@ export default function FinancePage() {
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterWallet, setFilterWallet] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'created_desc' | 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('created_desc');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // Reset pagination to page 1 on filter or sort change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filterType, filterCategory, filterWallet, filterDate, sortBy, searchQuery]);
 
   // Add Category modal state
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -129,20 +141,62 @@ export default function FinancePage() {
 
   const financeStreak = streaks.find((s) => s.module === 'finance')?.current_streak || 0;
 
-  // Filtered transactions
+  // Filtered & Sorted transactions
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((t) => {
+    let result = transactions.filter((t) => {
       const matchType = filterType === 'all' || t.type === filterType;
       const matchCategory = filterCategory === 'all' || t.category === filterCategory;
       const matchWallet =
-        filterWallet === 'all' || t.payment_method.toLowerCase() === filterWallet.toLowerCase();
+        filterWallet === 'all' ||
+        t.payment_method.toLowerCase() === filterWallet.toLowerCase() ||
+        (t.type === 'transfer' && t.to_payment_method?.toLowerCase() === filterWallet.toLowerCase());
+      const matchDate = !filterDate || t.date === filterDate;
       const matchSearch =
         t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.payment_method.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchType && matchCategory && matchWallet && matchSearch;
+        t.payment_method.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.to_payment_method && t.to_payment_method.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchType && matchCategory && matchWallet && matchDate && matchSearch;
     });
-  }, [transactions, filterType, filterCategory, filterWallet, searchQuery]);
+
+    // Sorting logic
+    return [...result].sort((a, b) => {
+      if (sortBy === 'created_desc') {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.id || '').localeCompare(a.id || '');
+      }
+      if (sortBy === 'date_desc') {
+        const dateComp = b.date.localeCompare(a.date);
+        if (dateComp !== 0) return dateComp;
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeB - timeA;
+      }
+      if (sortBy === 'date_asc') {
+        const dateComp = a.date.localeCompare(b.date);
+        if (dateComp !== 0) return dateComp;
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeA - timeB;
+      }
+      if (sortBy === 'amount_desc') {
+        return b.amount - a.amount;
+      }
+      if (sortBy === 'amount_asc') {
+        return a.amount - b.amount;
+      }
+      return 0;
+    });
+  }, [transactions, filterType, filterCategory, filterWallet, filterDate, searchQuery, sortBy]);
+
+  // Paginated transactions
+  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE));
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTransactions.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredTransactions, currentPage]);
 
   // Donut Chart Data (Expenses by Category)
   const donutData = useMemo(() => {
@@ -583,28 +637,51 @@ export default function FinancePage() {
 
       {/* Row 5: Transaction History Table & Filters */}
       <section className="bg-white rounded-3xl p-6 border border-black/6 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
           <div>
             <h3 className="text-lg font-extrabold text-[#111111]">Riwayat Transaksi</h3>
-            <p className="text-xs text-[#7F847C]">Total {filteredTransactions.length} transaksi tercatat</p>
+            <p className="text-xs text-[#7F847C]">
+              Total {filteredTransactions.length} transaksi tercatat • Halaman {currentPage} dari {totalPages}
+            </p>
           </div>
 
           {/* Filters & Actions */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Search */}
             <input
               type="text"
               placeholder="Cari transaksi..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-3.5 py-2 rounded-2xl bg-[#EDEFEB]/60 text-xs font-semibold border border-black/10 focus:outline-none focus:ring-2 focus:ring-[#111111] w-36 sm:w-44"
+              className="px-3.5 py-2 rounded-2xl bg-[#EDEFEB]/60 text-xs font-semibold border border-black/10 focus:outline-none focus:ring-2 focus:ring-[#111111] w-32 sm:w-40"
             />
+
+            {/* Date Filter (Cari Tanggal) */}
+            <div className="relative flex items-center">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="px-3 py-2 rounded-2xl bg-[#EDEFEB]/60 text-xs font-semibold border border-black/10 focus:outline-none focus:ring-2 focus:ring-[#111111] text-[#111111] cursor-pointer"
+                title="Filter berdasarkan tanggal"
+              />
+              {filterDate && (
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  title="Hapus filter tanggal"
+                  className="absolute right-2 p-0.5 rounded-full hover:bg-black/10 text-[#7F847C]"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
             {/* Type Filter */}
             <CustomSelect
               value={filterType}
               onChange={(v) => setFilterType(v as any)}
-              className="w-36"
+              className="w-32"
               options={[
                 { value: 'all', label: 'Semua Tipe' },
                 { value: 'income', label: 'Pemasukan (+)' },
@@ -617,7 +694,7 @@ export default function FinancePage() {
             <CustomSelect
               value={filterCategory}
               onChange={(v) => setFilterCategory(v)}
-              className="w-36 sm:w-40"
+              className="w-36"
               placeholder="Semua Kategori"
               options={[
                 { value: 'all', label: 'Semua Kategori' },
@@ -633,7 +710,7 @@ export default function FinancePage() {
             <CustomSelect
               value={filterWallet}
               onChange={(v) => setFilterWallet(v)}
-              className="w-36 sm:w-40"
+              className="w-36"
               placeholder="Semua Rekening"
               options={[
                 { value: 'all', label: 'Semua Metode' },
@@ -645,21 +722,35 @@ export default function FinancePage() {
               ]}
             />
 
+            {/* Sort Dropdown */}
+            <CustomSelect
+              value={sortBy}
+              onChange={(v) => setSortBy(v as any)}
+              className="w-44"
+              options={[
+                { value: 'created_desc', label: 'Terbaru Ditambahkan' },
+                { value: 'date_desc', label: 'Tanggal Terbaru' },
+                { value: 'date_asc', label: 'Tanggal Terlama' },
+                { value: 'amount_desc', label: 'Nominal Terbesar' },
+                { value: 'amount_asc', label: 'Nominal Terkecil' },
+              ]}
+            />
+
             {/* CTA Button */}
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold hover:bg-[#222222] transition-colors shadow-xs"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-[#111111] text-[#E4FF6B] text-xs font-extrabold hover:bg-[#222222] transition-colors shadow-xs shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Transaksi</span>
+              <span>Tambah</span>
             </button>
           </div>
         </div>
 
         {/* Transactions List */}
         <div className="divide-y divide-black/5">
-          {filteredTransactions.length > 0 ? (
-            filteredTransactions.map((t) => (
+          {paginatedTransactions.length > 0 ? (
+            paginatedTransactions.map((t) => (
               <div
                 key={t.id}
                 className="py-3.5 flex items-center justify-between hover:bg-[#EDEFEB]/40 px-3 rounded-2xl transition-colors"
@@ -747,10 +838,64 @@ export default function FinancePage() {
             ))
           ) : (
             <div className="py-12 text-center text-xs text-[#7F847C]">
-              Belum ada transaksi. Klik Tambah Transaksi untuk mulai mencatat.
+              {searchQuery || filterDate || filterType !== 'all' || filterCategory !== 'all' || filterWallet !== 'all'
+                ? 'Tidak ada transaksi yang cocok dengan filter yang dipilih.'
+                : 'Belum ada transaksi. Klik Tambah untuk mulai mencatat.'}
             </div>
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 mt-3 border-t border-black/5">
+            <span className="text-xs font-medium text-[#7F847C]">
+              Menampilkan <b className="text-[#111111]">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</b> -{' '}
+              <b className="text-[#111111]">
+                {Math.min(currentPage * ITEMS_PER_PAGE, filteredTransactions.length)}
+              </b>{' '}
+              dari <b className="text-[#111111]">{filteredTransactions.length}</b> transaksi
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                className="px-3 py-1.5 rounded-xl border border-black/10 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#EDEFEB] transition-colors flex items-center gap-1 text-[#111111]"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Prev</span>
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-8 h-8 rounded-xl text-xs font-extrabold transition-all ${
+                      currentPage === page
+                        ? 'bg-[#111111] text-[#E4FF6B] shadow-xs'
+                        : 'hover:bg-[#EDEFEB] text-[#111111]'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                className="px-3 py-1.5 rounded-xl border border-black/10 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#EDEFEB] transition-colors flex items-center gap-1 text-[#111111]"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Quick Add Modal */}
