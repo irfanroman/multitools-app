@@ -420,21 +420,127 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>) => {
-    let existed = false;
-    setTransactions((prev) => {
-      const idx = prev.findIndex((t) => t.id === id);
-      if (idx === -1) return prev;
-      existed = true;
-      const next = prev.slice();
-      next[idx] = { ...next[idx], ...updates };
-      return next;
+    const oldTx = transactionsRef.current.find((t) => t.id === id);
+    if (!oldTx) return;
+
+    const newTx: Transaction = { ...oldTx, ...updates };
+
+    // 1. Update transactions state optimistically
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === id ? newTx : t))
+    );
+
+    // 2. Compute wallet balance adjustments
+    const currentWallets = walletsRef.current;
+    const walletBalanceMap = new Map<string, number>();
+    currentWallets.forEach((w) => walletBalanceMap.set(w.id, w.balance));
+
+    // A. Revert old transaction effect
+    if (oldTx.type === 'transfer') {
+      const oldSource = currentWallets.find(
+        (w) => w.name.toLowerCase() === oldTx.payment_method.toLowerCase()
+      );
+      const oldDest = oldTx.to_payment_method
+        ? currentWallets.find(
+            (w) => w.name.toLowerCase() === oldTx.to_payment_method!.toLowerCase()
+          )
+        : undefined;
+
+      if (oldSource) {
+        walletBalanceMap.set(
+          oldSource.id,
+          (walletBalanceMap.get(oldSource.id) ?? 0) + oldTx.amount
+        );
+      }
+      if (oldDest) {
+        walletBalanceMap.set(
+          oldDest.id,
+          Math.max(0, (walletBalanceMap.get(oldDest.id) ?? 0) - oldTx.amount)
+        );
+      }
+    } else {
+      const oldSource = currentWallets.find(
+        (w) => w.name.toLowerCase() === oldTx.payment_method.toLowerCase()
+      );
+      if (oldSource) {
+        const revertDelta = oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
+        walletBalanceMap.set(
+          oldSource.id,
+          Math.max(0, (walletBalanceMap.get(oldSource.id) ?? 0) + revertDelta)
+        );
+      }
+    }
+
+    // B. Apply new transaction effect
+    if (newTx.type === 'transfer') {
+      const newSource = currentWallets.find(
+        (w) => w.name.toLowerCase() === newTx.payment_method.toLowerCase()
+      );
+      const newDest = newTx.to_payment_method
+        ? currentWallets.find(
+            (w) => w.name.toLowerCase() === newTx.to_payment_method!.toLowerCase()
+          )
+        : undefined;
+
+      if (newSource) {
+        walletBalanceMap.set(
+          newSource.id,
+          Math.max(0, (walletBalanceMap.get(newSource.id) ?? 0) - newTx.amount)
+        );
+      }
+      if (newDest) {
+        walletBalanceMap.set(
+          newDest.id,
+          (walletBalanceMap.get(newDest.id) ?? 0) + newTx.amount
+        );
+      }
+    } else {
+      const newSource = currentWallets.find(
+        (w) => w.name.toLowerCase() === newTx.payment_method.toLowerCase()
+      );
+      if (newSource) {
+        const applyDelta = newTx.type === 'income' ? newTx.amount : -newTx.amount;
+        walletBalanceMap.set(
+          newSource.id,
+          Math.max(0, (walletBalanceMap.get(newSource.id) ?? 0) + applyDelta)
+        );
+      }
+    }
+
+    // 3. Update wallets state optimistically
+    const affectedWalletIds: string[] = [];
+    currentWallets.forEach((w) => {
+      const updatedBalance = walletBalanceMap.get(w.id);
+      if (updatedBalance !== undefined && updatedBalance !== w.balance) {
+        affectedWalletIds.push(w.id);
+      }
     });
-    if (!existed) return;
+
+    if (affectedWalletIds.length > 0) {
+      setWallets((prev) =>
+        prev.map((w) => {
+          const updatedBalance = walletBalanceMap.get(w.id);
+          return updatedBalance !== undefined ? { ...w, balance: updatedBalance } : w;
+        })
+      );
+    }
+
+    // 4. Sync to Supabase in parallel
+    const writes: PromiseLike<unknown>[] = [
+      supabase.from('transactions').update(updates).eq('id', id),
+    ];
+
+    affectedWalletIds.forEach((wId) => {
+      const finalBal = walletBalanceMap.get(wId);
+      if (finalBal !== undefined) {
+        writes.push(supabase.from('wallets').update({ balance: finalBal }).eq('id', wId));
+      }
+    });
 
     try {
-      await supabase.from('transactions').update(updates).eq('id', id);
+      await Promise.all(writes);
     } catch (err) {
-      console.warn('Update transaction error:', err);
+      console.warn('Update transaction & wallet balance error:', err);
     }
   }, []);
 
