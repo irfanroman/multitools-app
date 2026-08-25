@@ -142,6 +142,19 @@ export default function LoginPage() {
         const cleanEmail = sanitizeText(email).toLowerCase();
         const cleanUsername = sanitizeText(username);
 
+        // Check if username already exists in profiles
+        const { data: existingUser } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+
+        if (existingUser) {
+          setErrorMessage(`Username "${cleanUsername}" sudah digunakan. Silakan pilih username lain.`);
+          setIsLoading(false);
+          return;
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
@@ -155,27 +168,59 @@ export default function LoginPage() {
 
         if (error) throw error;
 
-        // Pastikan langsung tersimpan di public.profiles juga
+        // Determine if a session was immediately established
+        let hasSession = !!data?.session;
+
+        // If session was not immediately returned by signUp, attempt to sign in directly
+        if (!hasSession && cleanEmail && password) {
+          try {
+            const { data: signInData } = await supabase.auth.signInWithPassword({
+              email: cleanEmail,
+              password,
+            });
+            if (signInData?.session) {
+              hasSession = true;
+            }
+          } catch {
+            // Auto-signin failed (e.g. if email confirmation is required)
+          }
+        }
+
+        // Upsert to public.profiles
         if (data?.user) {
-          await supabase.from('profiles').upsert({
-            id: data.user.id,
-            email: cleanEmail,
-            username: cleanUsername,
-            full_name: cleanUsername,
-          });
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              email: cleanEmail,
+              username: cleanUsername,
+              full_name: cleanUsername,
+            });
+          } catch (profileErr) {
+            console.warn('Profiles upsert warning:', profileErr);
+          }
         }
 
         setFailedAttempts(0);
-        confetti({ particleCount: 80, spread: 60 });
-        setSuccessMessage('Akun berhasil didaftarkan! Mengarahkan ke dashboard...');
-        setTimeout(() => {
-          router.push('/');
-        }, 1000);
+
+        if (hasSession) {
+          confetti({ particleCount: 80, spread: 60 });
+          setSuccessMessage('Akun berhasil didaftarkan! Mengarahkan ke dashboard...');
+          setTimeout(() => {
+            router.push('/');
+          }, 800);
+        } else {
+          // If session is still not available (email confirmation required)
+          setSuccessMessage(`Akun berhasil dibuat! Silakan cek kotak masuk email (${cleanEmail}) untuk verifikasi akun kamu, lalu login.`);
+          setMode('signin');
+          setIdentifier(cleanUsername || cleanEmail);
+          setPassword('');
+          setConfirmPassword('');
+        }
       } else {
         const cleanInput = sanitizeText(identifier);
         let targetEmail = cleanInput;
 
-        // Jika input bukan format email (misal: user mengetik username "nouusuki")
+        // Jika input bukan format email (misal: user mengetik username "amba")
         if (!cleanInput.includes('@')) {
           const { data: profileData } = await supabase
             .from('profiles')
@@ -185,6 +230,8 @@ export default function LoginPage() {
 
           if (profileData && profileData.email) {
             targetEmail = profileData.email;
+          } else {
+            throw new Error(`Username "${cleanInput}" tidak ditemukan. Pastikan username sudah terdaftar atau login dengan email.`);
           }
         }
 
@@ -204,15 +251,47 @@ export default function LoginPage() {
         }, 800);
       }
     } catch (err: any) {
-      const nextFail = failedAttempts + 1;
-      setFailedAttempts(nextFail);
+      console.error('Auth action error:', err);
+      const rawMsg = (err?.message || '').toLowerCase();
+      const errCode = err?.code || '';
 
-      if (nextFail >= 5) {
-        setLockoutSeconds(30);
-        setErrorMessage('Terlalu banyak percobaan login gagal. Form terkunci selama 30 detik demi keamanan.');
+      if (mode === 'signup') {
+        if (rawMsg.includes('user already registered') || rawMsg.includes('already registered')) {
+          setErrorMessage('Email sudah terdaftar. Silakan beralih ke SIGN IN untuk masuk.');
+        } else if (rawMsg.includes('password') && (rawMsg.includes('least') || rawMsg.includes('weak') || rawMsg.includes('short'))) {
+          setErrorMessage('Password belum memenuhi kriteria keamanan.');
+        } else {
+          setErrorMessage(err?.message || 'Pendaftaran akun gagal. Silakan coba beberapa saat lagi.');
+        }
       } else {
-        const remaining = 5 - nextFail;
-        setErrorMessage(`Login gagal. Periksa kembali username/email dan password kamu. (${remaining} percobaan tersisa sebelum lockout)`);
+        const nextFail = failedAttempts + 1;
+        setFailedAttempts(nextFail);
+
+        if (rawMsg.includes('email not confirmed') || errCode === 'email_not_confirmed') {
+          setErrorMessage('Email kamu belum dikonfirmasi. Silakan periksa inbox atau spam email kamu untuk melakukan verifikasi.');
+        } else if (rawMsg.includes('tidak ditemukan')) {
+          setErrorMessage(err.message);
+        } else if (
+          rawMsg.includes('invalid login credentials') ||
+          rawMsg.includes('invalid credentials') ||
+          errCode === 'invalid_credentials'
+        ) {
+          if (nextFail >= 5) {
+            setLockoutSeconds(30);
+            setErrorMessage('Terlalu banyak percobaan login gagal. Form terkunci selama 30 detik.');
+          } else {
+            const remaining = 5 - nextFail;
+            setErrorMessage(`Username/email atau kata sandi salah. (${remaining} percobaan tersisa sebelum terkunci)`);
+          }
+        } else {
+          if (nextFail >= 5) {
+            setLockoutSeconds(30);
+            setErrorMessage('Terlalu banyak percobaan login gagal. Form terkunci selama 30 detik.');
+          } else {
+            const remaining = 5 - nextFail;
+            setErrorMessage(`${err?.message || 'Login gagal. Periksa kembali data akun kamu.'} (${remaining} percobaan tersisa)`);
+          }
+        }
       }
     } finally {
       setIsLoading(false);

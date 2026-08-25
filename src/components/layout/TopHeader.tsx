@@ -5,6 +5,7 @@ import { Plus, RefreshCw, Calendar, Sun, Moon } from 'lucide-react';
 import { useDashboardData, useDashboardActions } from '@/lib/DashboardContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { QuickAddModal } from '@/components/ui/QuickAddModal';
+import { PWAInstallButton } from '@/components/pwa/PWAInstallButton';
 
 // Constructing an Intl formatter costs ~0.1-1ms and was previously repeated on
 // every render of every page header. Built once per module instead.
@@ -55,7 +56,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Action Controls & Badges */}
-        <div className="flex items-center flex-wrap gap-3">
+        <div className="flex items-center flex-wrap gap-2 sm:gap-3">
           {/* Today Date Pill */}
           <div className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl surface-chip text-xs font-semibold">
             <Calendar className="w-3.5 h-3.5 text-muted" />
@@ -85,6 +86,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <Moon className="w-4 h-4 group-hover:-rotate-12 transition-transform" />
             )}
           </button>
+
+          {/* PWA Install Button beside Tambah Data */}
+          <PWAInstallButton />
 
           {/* Quick CTA Black Button */}
           <button

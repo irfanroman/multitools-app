@@ -1,0 +1,71 @@
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+
+const iconsDir = path.join(__dirname, '..', 'public', 'icons');
+if (!fs.existsSync(iconsDir)) {
+  fs.mkdirSync(iconsDir, { recursive: true });
+}
+
+// Logo SVG with brand lime color #E4FF6B
+const getSvgLogo = (color = '#E4FF6B') => `
+<svg width="538" height="797" viewBox="0 0 538 797" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="121.484" y="796.059" width="121.484" height="796.059" rx="31.6914" transform="rotate(-180 121.484 796.059)" fill="${color}"/>
+  <rect x="538" y="320.688" width="121.484" height="320.687" rx="31.6914" transform="rotate(-180 538 320.688)" fill="${color}"/>
+  <rect x="516.875" width="121.484" height="516.872" rx="31.6914" transform="rotate(90 516.875 0)" fill="${color}"/>
+  <path d="M341.816 363.697C359.319 363.697 373.508 377.886 373.508 395.388V453.489C373.508 470.992 359.319 485.181 341.816 485.181L31.693 485.181C14.1903 485.181 0.00149536 470.992 0.00149536 453.489V363.697H149.781L341.816 363.697Z" fill="${color}"/>
+  <path d="M0.00149536 363.697H149.781C130.61 363.697 124.046 355.768 121.978 343.871C118.965 326.545 107.167 312.01 89.5807 312.01H31.6929C14.1902 312.01 0.00149536 326.199 0.00149536 343.701V363.697Z" fill="${color}"/>
+  <path d="M341.816 485.484C359.319 485.484 373.508 471.295 373.508 453.792V395.691C373.508 378.189 359.319 364 341.816 364L31.693 364C14.1903 364 0.00149536 378.189 0.00149536 395.691V485.484H149.781L341.816 485.484Z" fill="${color}"/>
+  <path d="M0.00149536 485.484H149.781C130.61 485.484 124.046 493.413 121.978 505.31C118.965 522.635 107.167 537.171 89.5807 537.171H31.6929C14.1902 537.171 0.00149536 522.982 0.00149536 505.479V485.484Z" fill="${color}"/>
+  <path d="M341.816 121.484C359.319 121.484 373.508 107.295 373.508 89.7922V31.6912C373.508 14.1885 359.319 -0.000213623 341.816 -0.000213623L31.693 -0.000213623C14.1903 -0.000213623 0.00149536 14.1885 0.00149536 31.6912V121.484L149.781 121.484L341.816 121.484Z" fill="${color}"/>
+  <path d="M0.00149536 121.484L149.781 121.484C130.61 121.484 124.046 129.413 121.978 141.31C118.965 158.635 107.167 173.171 89.5807 173.171H31.6929C14.1902 173.171 0.00149536 158.982 0.00149536 141.479V121.484Z" fill="${color}"/>
+  <path d="M196.184 121.484C178.681 121.484 164.492 107.295 164.492 89.7922V31.6912C164.492 14.1885 178.681 -0.000213623 196.184 -0.000213623L506.307 -0.000213623C523.81 -0.000213623 537.999 14.1885 537.999 31.6912V121.484L388.219 121.484L196.184 121.484Z" fill="${color}"/>
+  <path d="M537.999 121.484L388.219 121.484C407.39 121.484 413.954 129.413 416.022 141.31C419.035 158.635 430.833 173.171 448.419 173.171H506.307C523.81 173.171 537.999 158.982 537.999 141.479V121.484Z" fill="${color}"/>
+  <rect x="538" y="485.181" width="121.484" height="121.484" rx="31.6914" transform="rotate(-180 538 485.181)" fill="${color}"/>
+</svg>`;
+
+async function createIcon(size, paddingRatio, outputPath, background = '#0D0F12') {
+  const logoHeight = Math.round(size * (1 - paddingRatio * 2));
+  const logoWidth = Math.round(logoHeight * (538 / 797));
+
+  const svgBuffer = Buffer.from(getSvgLogo('#E4FF6B'));
+  const resizedLogo = await sharp(svgBuffer)
+    .resize(logoWidth, logoHeight)
+    .toBuffer();
+
+  const bgSvg = `<svg width="${size}" height="${size}">
+    <rect width="${size}" height="${size}" fill="${background}"/>
+  </svg>`;
+
+  await sharp(Buffer.from(bgSvg))
+    .composite([
+      {
+        input: resizedLogo,
+        gravity: 'center',
+      },
+    ])
+    .png()
+    .toFile(outputPath);
+
+  console.log(`Generated: ${outputPath}`);
+}
+
+async function run() {
+  // Standard PWA Icons
+  await createIcon(192, 0.20, path.join(iconsDir, 'icon-192x192.png'), '#0D0F12');
+  await createIcon(512, 0.20, path.join(iconsDir, 'icon-512x512.png'), '#0D0F12');
+
+  // Maskable Icons (Safe Zone with 30% padding)
+  await createIcon(192, 0.28, path.join(iconsDir, 'icon-maskable-192x192.png'), '#0D0F12');
+  await createIcon(512, 0.28, path.join(iconsDir, 'icon-maskable-512x512.png'), '#0D0F12');
+
+  // Apple Touch Icon (180x180)
+  await createIcon(180, 0.20, path.join(iconsDir, 'apple-touch-icon.png'), '#0D0F12');
+
+  // Copy to public root as well
+  await createIcon(180, 0.20, path.join(__dirname, '..', 'public', 'apple-touch-icon.png'), '#0D0F12');
+
+  console.log('All PWA icons generated successfully!');
+}
+
+run().catch(console.error);

@@ -14,6 +14,8 @@ import {
   LogOut,
   Settings,
   X,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 import { useDashboardData } from '@/lib/DashboardContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -341,6 +343,32 @@ export const Sidebar: React.FC = () => {
                     {isOnline ? 'Connected' : 'Offline'}
                   </span>
                 </div>
+              </div>
+
+              {/* PWA Mobile App Card */}
+              <div className="p-3.5 rounded-2xl bg-linear-to-r from-[#E4FF6B]/10 to-transparent border border-[#E4FF6B]/20 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-[#E4FF6B]/20 text-[#E4FF6B]">
+                    <Smartphone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-white">Aplikasi Mobile (PWA)</h5>
+                    <p className="text-[10px] text-white/50">Install di HP / Home Screen</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileModalOpen(false);
+                    // Clear dismissal to show prompt
+                    localStorage.removeItem('pwa_prompt_dismissed_at');
+                    window.location.reload();
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#E4FF6B] text-[#111111] text-[10px] font-black uppercase tracking-wider hover:bg-[#d2f347] transition-all flex items-center gap-1 shrink-0"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Install</span>
+                </button>
               </div>
 
               <div className="pt-2 flex justify-between items-center">

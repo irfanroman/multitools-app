@@ -5,6 +5,7 @@ import { DashboardProvider } from '@/lib/DashboardContext';
 import { ThemeProvider } from '@/lib/ThemeContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AuthGuard } from '@/components/layout/AuthGuard';
+import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
 
 // Plus Jakarta Sans is a variable font (200-800). Omitting `weight` ships ONE
 // variable file covering every weight the UI uses, instead of the five static
@@ -17,14 +18,38 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Data Science Multi-Tool Dashboard',
+  applicationName: 'MultiTools Suite',
+  title: {
+    default: 'Data Science & Multi-Tool Dashboard',
+    template: '%s | MultiTools',
+  },
   description:
-    'Personal all-in-one dashboard for finance, study tools, data science practice, and mood journal.',
+    'Personal all-in-one dashboard for finance, study tools, data science practice, and mindful journal.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'MultiTools',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
 };
 
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
   viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#EDEFEB' },
@@ -48,8 +73,10 @@ export default function RootLayout({
     <html lang="id" className={`h-full ${plusJakartaSans.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
       </head>
-      <body className="min-h-full flex flex-col md:flex-row font-sans antialiased tabular-nums selection:bg-lime-400 selection:text-black">
+      <body className="min-h-full flex flex-col md:flex-row font-sans antialiased tabular-nums selection:bg-lime-400 selection:text-black touch-manipulation">
+        <ServiceWorkerRegister />
         <ThemeProvider>
           {/* Provider sits ABOVE the guard so the data fetch starts in parallel
               with the session check instead of waiting a full round-trip. */}

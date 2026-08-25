@@ -40,10 +40,22 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
       else if (hasUser && path === '/login') routerRef.current.replace('/');
     };
 
+    // Fallback: in case getSession hangs or takes too long, resolve after 3s
+    const fallbackTimer = setTimeout(() => {
+      if (active && isAuthenticated === null) {
+        console.warn('Auth check fallback triggered');
+        applySession(false);
+      }
+    }, 3000);
+
     supabase.auth
       .getSession()
-      .then(({ data }) => applySession(!!data.session?.user))
+      .then(({ data }) => {
+        clearTimeout(fallbackTimer);
+        applySession(!!data.session?.user);
+      })
       .catch((err) => {
+        clearTimeout(fallbackTimer);
         console.warn('Auth check error:', err);
         applySession(false);
       });
@@ -56,6 +68,7 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
 
     return () => {
       active = false;
+      clearTimeout(fallbackTimer);
       subscription.unsubscribe();
     };
   }, []);
